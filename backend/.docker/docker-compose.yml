@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: .docker/Dockerfile
+      target: img-backend
+    volumes:
+      - ../..:/app
+    env_file:
+      - ../../.envs/aws.env
+      - ../../.envs/sls.env
+    command: sleep infinity
+

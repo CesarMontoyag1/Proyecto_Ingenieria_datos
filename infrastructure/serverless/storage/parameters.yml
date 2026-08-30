@@ -1,0 +1,48 @@
+Resources:
+  RawBucketNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/storage/RawAwid3BucketName
+      Type: String
+      Value: !Ref RawAwid3Bucket
+      Description: Nombre del bucket S3 para la capa Raw
+
+  RawBucketArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/storage/RawAwid3BucketArn
+      Type: String
+      Value: !GetAtt RawAwid3Bucket.Arn
+      Description: ARN del bucket S3 para la capa Raw
+
+  QuarantineBucketNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/storage/QuarantineAwid3BucketName
+      Type: String
+      Value: !Ref QuarantineAwid3Bucket
+      Description: Nombre del bucket S3 para la capa de cuarentena
+
+  QuarantineBucketArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/storage/QuarantineAwid3BucketArn
+      Type: String
+      Value: !GetAtt QuarantineAwid3Bucket.Arn
+      Description: ARN del bucket S3 para la capa de cuarentena
+
+  TrustedBucketNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/storage/TrustedAwid3BucketName
+      Type: String
+      Value: !Ref TrustedAwid3Bucket
+      Description: Nombre del bucket S3 para la capa Trusted
+
+  TrustedBucketArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/storage/TrustedAwid3BucketArn
+      Type: String
+      Value: !GetAtt TrustedAwid3Bucket.Arn
+      Description: ARN del bucket S3 para la capa Trusted

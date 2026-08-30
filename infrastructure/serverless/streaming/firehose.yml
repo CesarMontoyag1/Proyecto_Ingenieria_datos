@@ -1,0 +1,53 @@
+Resources:
+  FirehoseDeliveryRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: firehose.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FirehoseDeliveryPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:GetBucketLocation
+                Resource:
+                  - ${ssm:/nexasecure/${self:provider.stage}/storage/RawAwid3BucketArn}
+                  - !Sub "${ssm:/nexasecure/${self:provider.stage}/storage/RawAwid3BucketArn}/*"
+              - Effect: Allow
+                Action:
+                  - kinesis:GetRecords
+                  - kinesis:GetShardIterator
+                  - kinesis:DescribeStream
+                Resource: !GetAtt Awid3EventsStream.Arn
+              - Effect: Allow
+                Action:
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  Awid3RawDeliveryStream:
+    Type: AWS::KinesisFirehose::DeliveryStream
+    Properties:
+      DeliveryStreamType: KinesisStreamAsSource
+      KinesisStreamSourceConfiguration:
+        KinesisStreamARN: !GetAtt Awid3EventsStream.Arn
+        RoleARN: !GetAtt FirehoseDeliveryRole.Arn
+      ExtendedS3DestinationConfiguration:
+        BucketARN: ${ssm:/nexasecure/${self:provider.stage}/storage/RawAwid3BucketArn}
+        Prefix: "raw/streaming/year=!{timestamp:yyyy}/month=!{timestamp:MM}/day=!{timestamp:dd}/"
+        ErrorOutputPrefix: "raw/streaming-errors/!{firehose:error-output-type}/"
+        FileExtension: ".json"
+        BufferingHints:
+          IntervalInSeconds: 60
+          SizeInMBs: 5
+        CompressionFormat: UNCOMPRESSED
+        RoleARN: !GetAtt FirehoseDeliveryRole.Arn
+

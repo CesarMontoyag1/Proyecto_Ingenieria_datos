@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  glue_jobs:
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
+    volumes:
+      - ../..:/app
+    working_dir: /app/glue-jobs
+    command: sleep infinity
+    env_file:
+      - ../../.envs/aws.env
+

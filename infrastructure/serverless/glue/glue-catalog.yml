@@ -1,0 +1,9 @@
+Resources:
+  NexaSecureWidsCatalog:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: nexasecure_wids_catalog_${self:provider.stage}_${self:custom.developerName}
+        Description: Catálogo técnico de las capas Raw y Trusted del Lakehouse NexaSecure WIDS
+

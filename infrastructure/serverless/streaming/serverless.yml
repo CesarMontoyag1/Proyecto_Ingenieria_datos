@@ -1,0 +1,17 @@
+service: nexasecure-streaming
+
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-streaming-${self:provider.stage}
+
+custom:
+  developerName: ${env:GIT_USER_NAME, 'local'}
+  awid3StreamName: nexasecure-wids-awid3-events-${self:provider.stage}-${self:custom.developerName}
+
+resources:
+  - ${file(kinesis.yml)}
+  - ${file(firehose.yml)}
+  - ${file(parameters.yml)}
+

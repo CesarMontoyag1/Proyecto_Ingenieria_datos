@@ -1,0 +1,10 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "NexaSecure WIDS Backend",
+  "dependencies": {
+    "serverless": "^3.39.0",
+    "serverless-python-requirements": "^6.0.0"
+  }
+}
+

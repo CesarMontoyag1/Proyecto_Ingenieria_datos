@@ -1,0 +1,17 @@
+Resources:
+  GlueCatalogDatabaseNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/glue/GlueCatalogDatabaseName
+      Type: String
+      Value: !Ref NexaSecureWidsCatalog
+      Description: Nombre de la base de datos de AWS Glue Data Catalog
+
+  BatchIngestJobNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/glue/BatchIngestJobName
+      Type: String
+      Value: !Ref BatchIngestJob
+      Description: Nombre del job de Glue para ingesta batch
+

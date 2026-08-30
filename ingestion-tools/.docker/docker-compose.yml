@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  ingestion_tools:
+    container_name: 'NexaSecureIngestionTools'
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
+    dns:                  # <-- AGREGA ESTO
+      - 8.8.8.8           # <-- AGREGA ESTO
+      - 8.8.4.4           # <-- AGREGA ESTO
+    volumes:
+      - ../..:/app
+      - ingestion-tools-bashhistory:/commandhistory
+    env_file:
+      - ../../.envs/aws.env
+      - ../../.envs/kaggle.env
+    working_dir: /app/ingestion-tools
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -c
+      - sleep infinity
+
+volumes:
+  ingestion-tools-bashhistory:
+

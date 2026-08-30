@@ -1,0 +1,20 @@
+# Resources:
+#   DetectionEmrCluster:
+#     Type: AWS::EMR::Cluster
+#     Properties:
+#       Name: nexasecure-flink-cluster
+#       ReleaseLabel: emr-6.15.0
+#       Applications:
+#         - Name: Hadoop
+#         - Name: Flink
+#       Instances:
+#         MasterInstanceGroup:
+#           InstanceCount: 1
+#           InstanceType: m5.xlarge
+#         CoreInstanceGroup:
+#           InstanceCount: 2
+#           InstanceType: m5.xlarge
+#       JobFlowRole: EMR_EC2_DefaultRole
+#       ServiceRole: EMR_DefaultRole
+#       VisibleToAllUsers: true
+

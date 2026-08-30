@@ -1,0 +1,10 @@
+{
+    "frame.time_epoch": "1608227266.862492000",
+    "frame.len": "128",
+    "wlan.bssid": "00:11:22:33:44:55",
+    "wlan.sa": "00:11:22:33:44:55",
+    "wlan.da": "ff:ff:ff:ff:ff:ff",
+    "Label": "Normal",
+    "tcp.payload": "A"
+}
+

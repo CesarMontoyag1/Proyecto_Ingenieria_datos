@@ -1,0 +1,17 @@
+Resources:
+  Awid3StreamNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/streaming/Awid3StreamName
+      Type: String
+      Value: !Ref Awid3EventsStream
+      Description: Nombre del Kinesis Stream para eventos AWID3
+
+  Awid3StreamArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/streaming/Awid3StreamArn
+      Type: String
+      Value: !GetAtt Awid3EventsStream.Arn
+      Description: ARN del Kinesis Stream para eventos AWID3
+

@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  nexasecure-wids:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: img-root
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ..:/app
+    command: sleep infinity
+

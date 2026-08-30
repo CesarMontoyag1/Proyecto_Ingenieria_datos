@@ -1,0 +1,14 @@
+{
+  "name": "NexaSecure WIDS - Ingestion Tools",
+  "dockerComposeFile": ".docker/docker-compose.yml",
+  "service": "ingestion_tools",
+  "workspaceFolder": "/app/ingestion-tools",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python"
+      ]
+    }
+  }
+}
+

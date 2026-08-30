@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  flink_app:
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
+    volumes:
+      - ../..:/app
+    working_dir: /app/flink-app
+    command: sleep infinity
+    env_file:
+      - ../../.envs/aws.env
+

@@ -1,0 +1,10 @@
+service: nexasecure-emr
+
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+
+# resources:
+#   - ${file(emr-cluster.yml)}
+

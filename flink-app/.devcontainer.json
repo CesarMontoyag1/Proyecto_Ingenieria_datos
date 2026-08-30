@@ -1,0 +1,16 @@
+{
+  "name": "NexaSecure WIDS - Flink App",
+  "dockerComposeFile": ".docker/docker-compose.yml",
+  "service": "flink_app",
+  "workspaceFolder": "/app/flink-app",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "redhat.java",
+        "vscjava.vscode-java-pack"
+      ]
+    }
+  }
+}
+

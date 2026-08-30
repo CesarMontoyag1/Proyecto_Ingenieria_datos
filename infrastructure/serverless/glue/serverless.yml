@@ -1,0 +1,20 @@
+service: nexasecure-glue
+
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-glue-${self:provider.stage}
+
+custom:
+  developerName: ${env:GIT_USER_NAME, 'local'}
+  scriptsBucketName: nexasecure-wids-awid3-raw-${self:provider.stage}-${self:custom.developerName}
+
+resources:
+  - ${file(glue-iam.yml)}
+  - ${file(glue-catalog.yml)}
+  - ${file(glue-crawlers.yml)}
+  - ${file(glue-jobs.yml)}
+  - ${file(glue-triggers.yml)}
+  - ${file(parameters.yml)}
+

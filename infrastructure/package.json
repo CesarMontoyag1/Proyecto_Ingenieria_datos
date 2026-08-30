@@ -1,0 +1,9 @@
+{
+  "name": "infrastructure",
+  "version": "1.0.0",
+  "description": "NexaSecure WIDS Infrastructure",
+  "dependencies": {
+    "serverless": "^3.39.0"
+  }
+}
+

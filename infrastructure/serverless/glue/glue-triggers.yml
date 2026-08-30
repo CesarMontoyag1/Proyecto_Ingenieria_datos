@@ -1,0 +1,16 @@
+Resources:
+  RawCrawlerAfterIngestTrigger:
+    Type: AWS::Glue::Trigger
+    Properties:
+      Name: nexasecure_raw_crawler_trigger_${self:provider.stage}_${self:custom.developerName}
+      Type: CONDITIONAL
+      StartOnCreation: true
+      Predicate:
+        Conditions:
+          - LogicalOperator: EQUALS
+            JobName: !Ref BatchIngestJob
+            State: SUCCEEDED
+      Actions:
+        - CrawlerName: !Ref RawAwid3Crawler
+        - CrawlerName: !Ref TrustedAwid3Crawler
+

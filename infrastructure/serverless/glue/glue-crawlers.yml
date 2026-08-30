@@ -1,0 +1,31 @@
+Resources:
+  RawAwid3Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: nexasecure_raw_awid3_crawler_${self:provider.stage}_${self:custom.developerName}
+      Role: !GetAtt GlueServiceRole.Arn
+      DatabaseName: !Ref NexaSecureWidsCatalog
+      Targets:
+        IcebergTargets:
+          - Paths:
+              - !Sub "s3://${ssm:/nexasecure/${self:provider.stage}/storage/RawAwid3BucketName}/raw/"
+            MaximumTraversalDepth: 10
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: LOG
+
+  TrustedAwid3Crawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: nexasecure_trusted_awid3_crawler_${self:provider.stage}_${self:custom.developerName}
+      Role: !GetAtt GlueServiceRole.Arn
+      DatabaseName: !Ref NexaSecureWidsCatalog
+      Targets:
+        IcebergTargets:
+          - Paths:
+              - !Sub "s3://${ssm:/nexasecure/${self:provider.stage}/storage/TrustedAwid3BucketName}/trusted/"
+            MaximumTraversalDepth: 10
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: LOG
+

@@ -1,0 +1,18 @@
+service: nexasecure-storage
+
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-storage-${self:provider.stage}
+
+custom:
+  developerName: ${env:GIT_USER_NAME, 'local'}
+  rawBucketName: nexasecure-wids-awid3-raw-${self:provider.stage}-${self:custom.developerName}
+  quarantineBucketName: nexasecure-wids-awid3-quarantine-${self:provider.stage}-${self:custom.developerName}
+  trustedBucketName: nexasecure-wids-awid3-trusted-${self:provider.stage}-${self:custom.developerName}
+
+resources:
+  - ${file(s3.yml)}
+  - ${file(parameters.yml)}
+

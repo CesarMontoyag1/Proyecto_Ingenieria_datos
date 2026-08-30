@@ -1,0 +1,11 @@
+Resources:
+  Awid3EventsStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: ${self:custom.awid3StreamName}
+      ShardCount: 1
+      RetentionPeriodHours: 24
+      StreamEncryption:
+        EncryptionType: KMS
+        KeyId: alias/aws/kinesis
+

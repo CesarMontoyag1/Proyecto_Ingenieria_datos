@@ -1,0 +1,19 @@
+{
+  "name": "NexaSecure WIDS (Infrastructure)",
+  "dockerComposeFile": ".docker/docker-compose.yml",
+  "service": "infrastructure",
+  "workspaceFolder": "/app/infrastructure",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "esbenp.prettier-vscode",
+        "ms-python.python"
+      ],
+      "settings": {
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "postCreateCommand": "bash .docker/entrypoint.sh"
+}
+
