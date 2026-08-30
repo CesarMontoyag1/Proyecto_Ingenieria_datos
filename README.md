@@ -35,8 +35,30 @@ Scripts de PySpark que se ejecutan sin servidor en AWS Glue 4.0.
 
 ---
 
-##  Guía de Ejecución (Paso a Paso)
+## 🚀 Guía de Ejecución (Paso a Paso)
+
 Sigue estos pasos para desplegar y probar la arquitectura completa desde cero.
+
+### Fase 0: Preparación del Entorno y Archivos Locales (.envs)
+Por seguridad, las credenciales no se suben al repositorio. Antes de empezar, debes crear la carpeta `.envs/` en la raíz del proyecto y generar los siguientes 3 archivos:
+
+1. **`.envs/aws.env`** (Credenciales de AWS para despliegue y acceso):
+   ```env
+   AWS_ACCESS_KEY_ID=tu_access_key
+   AWS_SECRET_ACCESS_KEY=tu_secret_key
+   AWS_DEFAULT_REGION=us-east-1
+   ```
+2. **`.envs/kaggle.env`** (Credenciales Legacy de Kaggle para descargar el dataset AWID3):
+   ```env
+   KAGGLE_USERNAME=tu_usuario_de_kaggle
+   KAGGLE_KEY=tu_api_key_legacy_de_kaggle
+   ```
+3. **`.envs/sls.env`** (Opcional, variables para Serverless Framework si usas el dashboard de SLS):
+   ```env
+   SLS_ORG=tu_organizacion_en_serverless
+   ```
+
+Una vez creados estos archivos, la estructura local de tu proyecto estará lista para ser montada por Docker y los DevContainers.
 
 ### Fase 1: Despliegue de Infraestructura (AWS)
 1. Abre la carpeta `infrastructure` en VS Code (usa el DevContainer para asegurar Node.js y Serverless Framework).
@@ -49,12 +71,8 @@ Sigue estos pasos para desplegar y probar la arquitectura completa desde cero.
    cd ../glue && serverless deploy
    ```
 
-### Fase 2: Configurar las herramientas de Ingesta
-1. Crea un archivo `.envs/kaggle.env` en la raíz del proyecto con tus credenciales (API Token) de Kaggle:
-   ```env
-   KAGGLE_TOKEN=KGAT_tu_token_aqui
-   ```
-2. Abre la carpeta `ingestion-tools` en VS Code (reabre en su propio DevContainer) o levántalo manualmente:
+### Fase 2: Iniciar las Herramientas de Ingesta
+1. Abre la carpeta `ingestion-tools` en VS Code (reabre en su propio DevContainer) o levántalo manualmente:
    ```bash
    cd ingestion-tools/.docker
    docker-compose up -d --build
