@@ -10,7 +10,7 @@ Este es un proyecto académico desarrollado por estudiantes de Ingeniería de Si
  
 | Nombre completo | Rol principal |
 |---|---|
-| Daniel Arcila | Arquitecto de Datos / Cloud |
+| Daniel Arcila Salazar | Arquitecto de Datos / Cloud |
 | Luis Ángel Nerio Pereira | Ingeniero de Pipelines / Big Data |
 | Sebastián Durán Fernández | Oficial de Gobernanza y Calidad |
 | Cesar Montoya Giraldo | Líder Técnico / DataOps |
