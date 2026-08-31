@@ -27,6 +27,11 @@ Construido y funcional:
 - Módulos de validación y seudonimización reutilizados y probados con pruebas unitarias (pytest).
 ---
 
+### Diagrama de arquitectura (Actual):
+<img width="1600" height="1577" alt="WhatsApp Image 2026-08-31 at 12 05 50 AM" src="https://github.com/user-attachments/assets/c5b4dff2-25ad-4547-b455-af547bfc95dd" />
+
+---
+
 ##  Arquitectura y Componentes del Sistema
 
 El monorepositorio está dividido en módulos específicos según su propósito en el ciclo de vida del dato:
