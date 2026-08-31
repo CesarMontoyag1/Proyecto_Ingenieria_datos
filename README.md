@@ -4,6 +4,27 @@ NexaSecure WIDS es una plataforma analítica integral basada en AWS diseñada pa
 
 El proyecto adopta una arquitectura de **Lakehouse** sobre Amazon S3 con el formato **Apache Iceberg**, garantizando la inmutabilidad de los datos crudos (Raw), la seudonimización de información sensible (Trusted) y la gestión de calidad de datos (Quarantine). Todo bajo un modelo Serverless y de Infraestructura como Código (IaC).
 
+Este es un proyecto académico desarrollado por estudiantes de Ingeniería de Sistemas de la Universidad EAFIT (Medellín, Colombia), en el marco de la asignatura SI4002 - Proyecto de Ingeniería de Datos, semestre 2026-2.
+ 
+### Equipo de trabajo
+ 
+| Nombre completo | Rol principal |
+|---|---|
+| Daniel Arcila | Arquitecto de Datos / Cloud |
+| Luis Ángel Nerio Pereira | Ingeniero de Pipelines / Big Data |
+| Sebastián Durán Fernández | Oficial de Gobernanza y Calidad |
+| Cesar Montoya Giraldo | Líder Técnico / DataOps |
+ 
+---
+ 
+## Estado del proyecto (Sprint 1)
+ 
+Construido y funcional:
+- Infraestructura base en AWS (buckets S3, Secrets Manager, Glue Data Catalog).
+- Ruta de ingesta en streaming: simulador en Python -> Kinesis Data Stream -> Kinesis Firehose -> S3 Raw.
+- Ruta de ingesta batch: Glue Job que valida, seudonimiza y separa los datos entre Trusted y Quarantine.
+- Job de mantenimiento de Iceberg (compactación de archivos y expiración de snapshots).
+- Módulos de validación y seudonimización reutilizados y probados con pruebas unitarias (pytest).
 ---
 
 ##  Arquitectura y Componentes del Sistema
@@ -35,7 +56,7 @@ Scripts de PySpark que se ejecutan sin servidor en AWS Glue 4.0.
 
 ---
 
-## 🚀 Guía de Ejecución (Paso a Paso)
+## Guía de Ejecución (Paso a Paso)
 
 Sigue estos pasos para desplegar y probar la arquitectura completa desde cero.
 
