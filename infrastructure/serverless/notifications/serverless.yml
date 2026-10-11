@@ -1,0 +1,12 @@
+service: nexasecure-notifications
+
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-notifications-${self:provider.stage}
+
+resources:
+  - ${file(sns.yml)}
+  - ${file(parameters.yml)}
+

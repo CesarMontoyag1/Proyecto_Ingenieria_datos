@@ -6,9 +6,17 @@ provider:
   stage: ${opt:stage, 'dev'}
   stackName: nexasecure-glue-${self:provider.stage}
 
+plugins:
+  - serverless-s3-sync
+
 custom:
   developerName: ${env:GIT_USER_NAME, 'local'}
   scriptsBucketName: nexasecure-wids-awid3-raw-${self:provider.stage}-${self:custom.developerName}
+  s3Sync:
+    - bucketName: ${self:custom.scriptsBucketName}
+      bucketPrefix: glue-jobs/
+      localDir: ../../../glue-jobs/src
+
 
 resources:
   - ${file(glue-iam.yml)}

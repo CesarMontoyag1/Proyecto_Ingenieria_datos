@@ -1,0 +1,17 @@
+Resources:
+  SocAlertsTopicArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/notifications/SocAlertsTopicArn
+      Type: String
+      Value: !Ref SocAlertsTopic
+      Description: ARN del tópico SNS para alertas del SOC en NexaSecure
+
+  SocAlertsTopicNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/notifications/SocAlertsTopicName
+      Type: String
+      Value: !GetAtt SocAlertsTopic.TopicName
+      Description: Nombre del tópico SNS para alertas del SOC en NexaSecure
+

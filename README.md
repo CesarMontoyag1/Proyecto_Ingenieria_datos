@@ -118,25 +118,39 @@ Una vez creados estos archivos, la estructura local de tu proyecto estará lista
 
 ### Fase 3: Probar el flujo Streaming (Kinesis -> Firehose -> S3)
 Desde dentro del contenedor de `ingestion-tools`:
-1. Envía tráfico simulado a AWS:
+1. Envía tráfico en tiempo real consumiendo la porción de **Streaming** (segundo 50% de las categorías seleccionadas):
    ```bash
+   # Varias categorías de ataque simultáneas (ej. 30 eventos por cada una):
+   python -m src.kaggle_stream_simulator --categories "1.Deauth" "2.Disas" "10.SQL_Injection" --limit-per-cat 30 --rate 10
+
+   # O todas las 13 categorías del dataset AWID3:
+   python -m src.kaggle_stream_simulator --all-categories --limit-per-cat 20 --rate 10
+
+   # O un solo archivo específico:
    python -m src.kaggle_stream_simulator --kaggle-path "CSV/1.Deauth/Deauth_0.csv" --limit 50 --rate 10
    ```
 2. **Validación:** Espera ~60 segundos (el tiempo de búfer de Firehose). En la consola de AWS (o vía CLI), revisa el bucket Raw. Verás archivos `.json` estructurados por año/mes/día/hora en la ruta `raw/streaming/`.
 
 ### Fase 4: Probar el flujo Batch (Landing -> Glue -> Iceberg)
 Desde dentro del contenedor de `ingestion-tools`:
-1. Sube un archivo de Kaggle directo a la zona de aterrizaje:
+1. Sube la porción destinada a **Batch** (primer 50% de las categorías seleccionadas) a la zona de aterrizaje:
    ```bash
-   python -m src.kaggle_batch_loader --kaggle-path "CSV/1.Deauth/Deauth_0.csv" --limit-files 1
+   # Varias categorías de ataque (sube 1 archivo muestra por cada una):
+   python -m src.kaggle_batch_loader --categories "1.Deauth" "2.Disas" "10.SQL_Injection" --limit-files 1
+
+   # O todas las 13 categorías de AWID3 (1 archivo por categoría):
+   python -m src.kaggle_batch_loader --all-categories --limit-files 1
+
+   # O una categoría o archivo individual:
+   python -m src.kaggle_batch_loader --kaggle-path "CSV/1.Deauth/Deauth_0.csv" --split-mode files
    ```
 
-Desde el contenedor de `infrastructure` (o cualquier terminal con `aws-cli` configurado):
-2. Sube el código fuente de los jobs de Spark al bucket crudo:
+Desde el contenedor de `infrastructure`:
+2. Si actualizaste el código de los scripts de Spark, despliega el stack de Glue (Serverless sincroniza los scripts a S3 automáticamente):
    ```bash
-   RAW_BUCKET=$(aws ssm get-parameter --name /nexasecure/dev/storage/RawAwid3BucketName --query Parameter.Value --output text)
-   aws s3 cp /app/glue-jobs/src/batch_ingest_job.py s3://$RAW_BUCKET/glue-jobs/batch_ingest_job.py
-   aws s3 cp /app/glue-jobs/src/compaction_job.py s3://$RAW_BUCKET/glue-jobs/compaction_job.py
+   cd /app/infrastructure/serverless/glue
+   ./deploy.sh
+   # (o simplemente: serverless deploy)
    ```
 3. Ejecuta el Job Batch de Glue:
    ```bash

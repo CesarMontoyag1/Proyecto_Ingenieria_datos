@@ -1,0 +1,45 @@
+service: nexasecure-alerts
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-alerts-${self:provider.stage}
+  environment:
+    SNS_TOPIC_ARN: ${ssm:/nexasecure/${self:provider.stage}/notifications/SocAlertsTopicArn}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - sns:Publish
+          Resource: ${ssm:/nexasecure/${self:provider.stage}/notifications/SocAlertsTopicArn}
+        - Effect: Allow
+          Action:
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource: ${ssm:/nexasecure/${self:provider.stage}/queue/AlertsQueueArn}
+
+package:
+  individually: true
+
+functions:
+  alertFormatter:
+    handler: handler.lambda_handler
+    description: Formatea alertas desde la cola SQS y las publica en SNS
+    timeout: 30
+    package:
+      patterns:
+        - '!**'
+        - 'handler.py'
+    events:
+      - sqs:
+          arn: ${ssm:/nexasecure/${self:provider.stage}/queue/AlertsQueueArn}
+          batchSize: 5
+          functionResponseType: ReportBatchItemFailures
+
+resources:
+  - ${file(parameters.yml)}
+

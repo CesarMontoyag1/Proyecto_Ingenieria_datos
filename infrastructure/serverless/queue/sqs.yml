@@ -1,0 +1,17 @@
+Resources:
+  AlertsDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: nexasecure-alerts-dlq-${self:provider.stage}
+      MessageRetentionPeriod: 1209600
+
+  AlertsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: nexasecure-alerts-${self:provider.stage}
+      MessageRetentionPeriod: 1209600
+      VisibilityTimeout: 60
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt AlertsDLQ.Arn
+        maxReceiveCount: 3
+

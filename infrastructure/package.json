@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "NexaSecure WIDS Infrastructure",
   "dependencies": {
-    "serverless": "^3.39.0"
+    "serverless": "^3.39.0",
+    "serverless-s3-sync": "^3.3.0"
   }
 }
 
