@@ -17,15 +17,22 @@ Este es un proyecto académico desarrollado por estudiantes de Ingeniería de Si
  
 ---
  
-## Estado del proyecto (Sprint 1)
- 
+## Estado del proyecto (Sprint 2 — Producto Beta)
+
 Construido y funcional:
-- Infraestructura base en AWS (buckets S3, Secrets Manager, Glue Data Catalog).
-- Ruta de ingesta en streaming: simulador en Python -> Kinesis Data Stream -> Kinesis Firehose -> S3 Raw.
-- Ruta de ingesta batch: Glue Job que valida, seudonimiza y separa los datos entre Trusted y Quarantine.
+- Infraestructura base en AWS (buckets S3, Secrets Manager, Glue Data Catalog, Kinesis + Firehose).
+- Ruta de ingesta batch: Glue Job que valida (calibrado por tipo de trama 802.11), seudonimiza y separa los datos entre Trusted y Quarantine.
+- Ruta de ingesta en streaming: `flink-app` sobre Amazon EMR, que valida, seudonimiza y evalúa reglas de detección en tiempo real (Deauth Flood, Rogue AP, Disas Burst) con alertas publicadas a SQS/SNS vía `alert_formatter`.
 - Job de mantenimiento de Iceberg (compactación de archivos y expiración de snapshots).
-- Módulos de validación y seudonimización reutilizados y probados con pruebas unitarias (pytest).
----
+- Capa transaccional en RDS PostgreSQL: catálogo de reglas, alertas, casos de incidente y bitácora de auditoría, con RBAC de 2 perfiles (`security_analyst`, `auditor`).
+- **2 optimizaciones de base de datos aplicadas:** particionamiento + bloom filter sobre `trusted_awid3` (Iceberg/Athena) e índices BRIN/GIN/parcial sobre la capa transaccional (RDS) — comparativo antes/después documentado en la presentación del Sprint 2.
+- Gobernanza consolidada en `DATA_GOVERNANCE.md` (diccionario de datos, catálogo, linaje, matriz RACI, reglas de calidad).
+- Módulos de validación, seudonimización y detección probados con pruebas unitarias (pytest).
+
+Pendiente para el Sprint Final (fuera de alcance de Sprint 2 por definición de la rúbrica):
+- Capa de consumo: Amazon Athena / Redshift Spectrum y el dashboard operativo (QuickSight o Power BI).
+- DataOps: CI/CD, observabilidad y monitoreo de los pipelines en producción.
+
 
 ### Diagrama de arquitectura (Actual):
 <img width="2224" height="2011" alt="diagrama_datos" src="https://github.com/user-attachments/assets/56e81bce-b3d5-45ef-bf0b-3ba48591752c" />
