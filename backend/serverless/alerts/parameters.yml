@@ -1,0 +1,9 @@
+Resources:
+  AlertFormatterFunctionNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/alerts/AlertFormatterFunctionName
+      Type: String
+      Value: !Ref AlertFormatterLambdaFunction
+      Description: Nombre de la función Lambda Alert Formatter
+

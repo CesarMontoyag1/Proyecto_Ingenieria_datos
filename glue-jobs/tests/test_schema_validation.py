@@ -8,6 +8,7 @@ def test_validate_record_logic_valid():
     record = {
         "frame.time_epoch": "1608227266.862492000",
         "frame.len": "128",
+        "wlan.fc.type": "0",
         "wlan.bssid": "00:11:22:33:44:55",
         "wlan.sa": "00:11:22:33:44:55",
         "wlan.da": "ff:ff:ff:ff:ff:ff",
@@ -15,6 +16,52 @@ def test_validate_record_logic_valid():
     }
     result = validate_record_logic(record)
     assert result == ""
+
+def test_validate_record_logic_control_frame_valid():
+    # ACK / CTS / RTS frame (type 1) has no bssid or sa, only receiver address (da/ra)
+    record = {
+        "frame.time_epoch": "1608227266.862492000",
+        "frame.len": "14",
+        "wlan.fc.type": "1",
+        "wlan.da": "00:11:22:33:44:55",
+        "Label": "Normal"
+    }
+    result = validate_record_logic(record)
+    assert result == ""
+
+def test_validate_record_logic_control_frame_missing_receiver():
+    record = {
+        "frame.time_epoch": "1608227266.862492000",
+        "frame.len": "14",
+        "wlan.fc.type": "1",
+        "Label": "Normal"
+    }
+    result = validate_record_logic(record)
+    assert "missing_receiver_address_in_control_frame" in result
+
+def test_validate_record_logic_data_missing_bssid():
+    record = {
+        "frame.time_epoch": "1608227266.862492000",
+        "frame.len": "128",
+        "wlan.fc.type": "2",
+        "wlan.sa": "00:11:22:33:44:55",
+        "Label": "Normal"
+    }
+    result = validate_record_logic(record)
+    assert "missing_bssid_in_data_or_mgmt_frame" in result
+
+def test_validate_record_logic_tcp_overflow():
+    record = {
+        "frame.time_epoch": "1608227266.862492000",
+        "frame.len": "35000",
+        "wlan.fc.type": "2",
+        "wlan.bssid": "00:11:22:33:44:55",
+        "wlan.sa": "00:11:22:33:44:55",
+        "tcp.payload": "A" * 33000,
+        "Label": "Normal"
+    }
+    result = validate_record_logic(record)
+    assert "tcp_payload_overflow" in result
 
 def test_validate_record_logic_missing_critical():
     record = {

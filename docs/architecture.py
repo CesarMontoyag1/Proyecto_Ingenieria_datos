@@ -13,12 +13,12 @@ from diagrams.aws.analytics import (
     Redshift,
     Quicksight,
 )
-from diagrams.aws.integration import SNS
+from diagrams.aws.integration import SNS, SQS
 from diagrams.programming.language import Python
 from diagrams.generic.storage import Storage
 from diagrams.onprem.analytics import PowerBI
 
-# Nota: este script asume que corre dentro del devcontainer 'img-root' con graphviz instalado
+# Nota: este script corre dentro del entorno con diagrams y graphviz instalados
 
 with Diagram("NexaSecure WIDS - Arquitectura Streaming & Batch", show=False, direction="LR"):
 
@@ -26,6 +26,10 @@ with Diagram("NexaSecure WIDS - Arquitectura Streaming & Batch", show=False, dir
         s3_raw = S3("Raw Bucket\n(S3)")
         s3_trusted = S3("Trusted Bucket\n(S3)")
         s3_quarantine = S3("Quarantine Bucket\n(S3)")
+
+    with Cluster("Mantenimiento Iceberg [BUILT]"):
+        glue_compaction = Glue("Iceberg Maint. Job\nCompactación + Snapshots")
+        glue_compaction >> Edge(style="dashed", color="gray", label="compactación / limpieza", forward=True, reverse=True) >> s3_trusted
 
     with Cluster("Sprint 1: Pipeline Streaming [BUILT]"):
         sim = Python("Simulador Python\nAWID3")
@@ -48,23 +52,20 @@ with Diagram("NexaSecure WIDS - Arquitectura Streaming & Batch", show=False, dir
         s3_trusted >> Edge(style="dashed", color="gray") >> glue_crawler
         glue_crawler >> glue_catalog
 
-    with Cluster("Mantenimiento Iceberg [BUILT]"):
-        glue_compaction = Glue("Iceberg Maint. Job\nCompactación + Snapshots")
-        glue_compaction >> s3_trusted
-
     with Cluster("Sprint 2: Detección Streaming [PENDING]"):
         emr_flink = EMRCluster("EMR + Flink\n(Detección, SLA < 2s)")
 
         kinesis >> Edge(style="dashed", color="firebrick", label="Stream a evaluar") >> emr_flink
-        emr_flink >> s3_trusted
-        emr_flink >> s3_quarantine
+        emr_flink >> Edge(color="firebrick") >> s3_trusted
+        emr_flink >> Edge(color="firebrick") >> s3_quarantine
 
     with Cluster("Sistema de Notificaciones [PENDING]"):
+        sqs_alerts = SQS("Alerts Queue\n(SQS + DLQ)")
         lambda_alert = Lambda("Alert Formatter\n(Lambda)")
         sns_topic = SNS("Amazon SNS\nEmail / Slack SOC")
 
-        emr_flink >> Edge(style="dashed", color="firebrick", label="Patrón anómalo") >> lambda_alert
-        lambda_alert >> sns_topic
+        emr_flink >> Edge(style="dashed", color="firebrick", label="Patrón anómalo") >> sqs_alerts
+        sqs_alerts >> lambda_alert >> sns_topic
 
     with Cluster("Sprint 2: Capa Analítica [PENDING]"):
         athena = Athena("Amazon Athena\nConsulta ad-hoc")

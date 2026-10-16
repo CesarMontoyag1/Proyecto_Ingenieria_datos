@@ -1,0 +1,12 @@
+service: nexasecure-queue
+
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-queue-${self:provider.stage}
+
+resources:
+  - ${file(sqs.yml)}
+  - ${file(parameters.yml)}
+

@@ -1,20 +1,45 @@
-# Resources:
-#   DetectionEmrCluster:
-#     Type: AWS::EMR::Cluster
-#     Properties:
-#       Name: nexasecure-flink-cluster
-#       ReleaseLabel: emr-6.15.0
-#       Applications:
-#         - Name: Hadoop
-#         - Name: Flink
-#       Instances:
-#         MasterInstanceGroup:
-#           InstanceCount: 1
-#           InstanceType: m5.xlarge
-#         CoreInstanceGroup:
-#           InstanceCount: 2
-#           InstanceType: m5.xlarge
-#       JobFlowRole: EMR_EC2_DefaultRole
-#       ServiceRole: EMR_DefaultRole
-#       VisibleToAllUsers: true
+Resources:
+  DetectionEmrCluster:
+    Type: AWS::EMR::Cluster
+    Properties:
+      Name: nexasecure-flink-cluster-${self:provider.stage}
+      ReleaseLabel: emr-6.15.0
+      Applications:
+        - Name: Hadoop
+        - Name: Flink
+      Instances:
+        MasterInstanceGroup:
+          InstanceCount: 1
+          InstanceType: ${env:EMR_INSTANCE_TYPE, 'm5.xlarge'}
+          Name: MasterNode
+        CoreInstanceGroup:
+          InstanceCount: 1
+          InstanceType: ${env:EMR_INSTANCE_TYPE, 'm5.xlarge'}
+          Name: CoreNode
+        TerminationProtected: false
+      AutoTerminationPolicy:
+        IdleTimeout: 1800 # 30 minutos de inactividad antes de auto-terminar para proteger créditos
+      # Roles existentes de AWS Academy Learner Lab (sin declarar AWS::IAM::Role)
+      JobFlowRole: ${env:EMR_JOB_FLOW_ROLE, 'LabInstanceProfile'}
+      ServiceRole: ${env:EMR_SERVICE_ROLE, 'LabRole'}
+      VisibleToAllUsers: true
+      BootstrapActions:
+        - Name: InstallPyFlinkAndDependencies
+          ScriptBootstrapAction:
+            Path: !Sub "s3://${ssm:/nexasecure/${self:provider.stage}/storage/RawAwid3BucketName}/bootstrap/emr-bootstrap.sh"
 
+  ClusterIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/emr/ClusterId
+      Type: String
+      Value: !Ref DetectionEmrCluster
+      Description: ID del cluster Amazon EMR para deteccion Flink
+
+  StepNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/emr/StepName
+      Type: String
+      Value: NexaSecureFlinkDetectionStep
+      Description: Nombre del Step de ejecucion Flink en EMR

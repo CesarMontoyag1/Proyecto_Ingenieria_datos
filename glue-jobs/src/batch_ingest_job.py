@@ -2,9 +2,10 @@
 Job de ingesta batch del dataset AWID3.
 Autocontenido: no depende de módulos externos en src/.
 Flujo:
-  1. Lee CSVs desde landing/batch/ en el bucket Raw.
+  1. Lee CSVs incrementalmente desde landing/batch/ usando AWS Glue Job Bookmarks.
   2. Escribe TODO sin filtro a la tabla Iceberg de Raw (inmutabilidad).
-  3. Valida cada fila -> bifurca hacia Trusted (pseudonimizado) o Quarantine.
+  3. Valida cada fila según protocolo Wi-Fi 802.11 -> bifurca hacia Trusted (pseudonimizado) o Quarantine.
+  4. Realiza append a las tablas Iceberg de Raw y Trusted.
 """
 import sys
 import json
@@ -21,34 +22,71 @@ from pyspark.sql.functions import col, udf, struct
 from pyspark.sql.types import StringType
 
 
-# ─── Lógica de validación ────────────────────────────────────────────────────
-CRITICAL_COLUMNS = [
-    "frame.time_epoch", "frame.len", "wlan.bssid",
-    "wlan.sa", "wlan.da", "Label"
+# ─── Lógica de validación (Calibrada para 802.11) ─────────────────────────────
+UNIVERSAL_CRITICAL_COLUMNS = [
+    "frame.time_epoch", "frame.len", "Label"
 ]
 
+def _clean_str(val):
+    if val is None:
+        return ""
+    s = str(val).strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    return s
+
 def _validate_record_logic(row_dict: dict) -> str:
-    """Devuelve '' si es válido, o el motivo de rechazo si no."""
-    for col_name in CRITICAL_COLUMNS:
+    """
+    Devuelve '' si es válido, o el motivo de rechazo si no.
+    Calibrado para el protocolo 802.11: Tramas de Control (type 1) no tienen BSSID por diseño.
+    """
+    # 1. Validar columnas universales presentes en cualquier trama
+    for col_name in UNIVERSAL_CRITICAL_COLUMNS:
         val = row_dict.get(col_name)
-        if val is None or str(val).strip() == "":
+        if val is None or _clean_str(val) == "":
             return f"missing_critical_column:{col_name}"
+
+    # 2. Validación condicional según tipo de trama 802.11 (wlan.fc.type)
+    # 0 = Management (Gestión), 1 = Control, 2 = Data (Datos)
+    frame_type = _clean_str(row_dict.get("wlan.fc.type"))
+
+    if frame_type == "1":
+        # Tramas de Control (ACK, CTS, RTS): No tienen wlan.bssid por estándar 802.11.
+        # Deben tener al menos la dirección del receptor (wlan.ra o wlan.da)
+        ra = _clean_str(row_dict.get("wlan.ra"))
+        da = _clean_str(row_dict.get("wlan.da"))
+        if not (ra or da):
+            return "missing_receiver_address_in_control_frame"
+    else:
+        # Tramas de Gestión (0) y Datos (2): requieren BSSID y dirección de origen
+        bssid = _clean_str(row_dict.get("wlan.bssid"))
+        sa = _clean_str(row_dict.get("wlan.sa"))
+        ta = _clean_str(row_dict.get("wlan.ta"))
+        if not bssid:
+            return "missing_bssid_in_data_or_mgmt_frame"
+        if not (sa or ta):
+            return "missing_source_address"
+
+    # 3. Validar desbordamiento de payload TCP
     if "tcp.payload" in row_dict and row_dict["tcp.payload"]:
         if len(str(row_dict["tcp.payload"])) > 32767:
             return "tcp_payload_overflow"
-    if (row_dict.get("tls.decryption_failed") == "1"
-            or row_dict.get("tls.alert_message.desc") == "bad_record_mac"):
-        return "tls_decryption_error"
+
+    # 4. Validar descifrado TLS si hay alerta de bad record mac
+    if row_dict.get("tls.alert_message.desc") == "bad_record_mac":
+        return "tls_bad_record_mac"
+
     return ""
 
 
 # ─── Lógica de seudonimización ───────────────────────────────────────────────
 def _pseudonymize_mac(mac: str, key_bytes: bytes) -> str:
-    if not mac or len(mac) < 8:
+    if not mac or len(str(mac).strip()) < 8:
         return mac
-    parts = mac.split(':')
+    mac_str = str(mac).strip()
+    parts = mac_str.split(':')
     if len(parts) != 6:
-        h = hmac.new(key_bytes, mac.encode('utf-8'), hashlib.sha256)
+        h = hmac.new(key_bytes, mac_str.encode('utf-8'), hashlib.sha256)
         return h.hexdigest()
     oui = ":".join(parts[:3])
     suffix = ":".join(parts[3:])
@@ -62,9 +100,31 @@ def get_secret(secret_name: str) -> str:
     return json.loads(resp['SecretString'])['key']
 
 
+def save_iceberg_table(df_to_save, table_name: str, location_s3: str, spark_session):
+    """
+    Crea la tabla Iceberg si no existe, o hace append si ya existe (idempotencia y bookmarking).
+    """
+    table_exists = False
+    try:
+        spark_session.sql(f"DESCRIBE TABLE {table_name}")
+        table_exists = True
+    except Exception as e:
+        print(f"Tabla {table_name} no existe aún ({e}). Se procederá a crearla.")
+        table_exists = False
+
+    if table_exists:
+        print(f"Haciendo append a tabla Iceberg existente: {table_name} ...")
+        df_to_save.writeTo(table_name).append()
+    else:
+        print(f"Creando tabla Iceberg inicial: {table_name} en {location_s3} ...")
+        df_to_save.writeTo(table_name) \
+                  .tableProperty("format-version", "2") \
+                  .tableProperty("location", location_s3) \
+                  .create()
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 def main():
-    # Resolver argumentos (opcionales y requeridos)
     raw_args = sys.argv
     opt_keys = [
         'JOB_NAME',
@@ -73,7 +133,6 @@ def main():
         'QUARANTINE_BUCKET_NAME',
         'HMAC_SECRET_NAME'
     ]
-    # Si viene CATALOG_DATABASE_NAME en sys.argv, incluirlo
     if any('--CATALOG_DATABASE_NAME' in arg for arg in raw_args):
         opt_keys.append('CATALOG_DATABASE_NAME')
 
@@ -101,27 +160,42 @@ def main():
 
     print(f"Usando Glue Catalog Database: {catalog_db}")
 
-    # 1. Leer CSVs desde la zona de aterrizaje
+    # 1. Leer CSVs incrementalmente desde landing/batch/ usando AWS Glue Job Bookmarks
     landing_path = f"s3://{raw_bucket}/landing/batch/"
-    print(f"Leyendo CSVs desde {landing_path}")
-    df = spark.read.csv(landing_path, header=True, inferSchema=True)
+    print(f"Leyendo CSVs incrementalmente con Job Bookmark desde {landing_path}")
+
+    dynamic_frame = glue_ctx.create_dynamic_frame.from_options(
+        connection_type="s3",
+        connection_options={
+            "paths": [landing_path],
+            "recurse": True
+        },
+        format="csv",
+        format_options={
+            "withHeader": True,
+            "separator": ","
+        },
+        transformation_ctx="awid3_csv_source"
+    )
+
+    df = dynamic_frame.toDF()
     total = df.count()
-    print(f"Total filas leídas: {total}")
+    print(f"Total filas leídas en este lote: {total}")
+
+    if total == 0:
+        print("No se encontraron registros nuevos en landing/batch/ (Job Bookmark al día). Finalizando.")
+        job.commit()
+        return
 
     # 2. Escribir a Raw Iceberg (inmutabilidad — SIN filtros antes de esto)
     raw_table = f"glue_catalog.{catalog_db}.raw_awid3"
-    print(f"Escribiendo a tabla Iceberg Raw: {raw_table} ...")
-    df.writeTo(raw_table) \
-      .tableProperty("format-version", "2") \
-      .tableProperty("location", f"s3://{raw_bucket}/raw/") \
-      .createOrReplace()
+    save_iceberg_table(df, raw_table, f"s3://{raw_bucket}/raw/", spark)
 
-    # 3. Validar cada fila con UDF autocontenida
+    # 3. Validar cada fila con UDF calibrada para 802.11
     validate_udf = udf(
         lambda row: _validate_record_logic(row.asDict()),
         StringType()
     )
-    # struct("*") pasa todas las columnas sin problemas de resolución por los puntos en los nombres
     df_v = df.withColumn("rejection_reason", validate_udf(struct("*")))
 
     df_valid   = df_v.filter(col("rejection_reason") == "")
@@ -129,27 +203,22 @@ def main():
 
     valid_count = df_valid.count()
     invalid_count = df_invalid.count()
-    print(f"Válidos: {valid_count} | Inválidos: {invalid_count}")
+    print(f"Válidos: {valid_count} ({valid_count*100.0/total:.2f}%) | Inválidos: {invalid_count} ({invalid_count*100.0/total:.2f}%)")
 
     # 4. Seudonimizar y escribir a Trusted Iceberg
     hmac_key = get_secret(hmac_secret).encode('utf-8')
-    pseudo_udf = udf(lambda mac: _pseudonymize_mac(mac or "", hmac_key), StringType())
+    pseudo_udf = udf(lambda mac: _pseudonymize_mac(mac, hmac_key) if mac else mac, StringType())
 
-    mac_cols = ["wlan.bssid", "wlan.sa", "wlan.da"]
+    mac_cols = ["wlan.bssid", "wlan.sa", "wlan.da", "wlan.ra", "wlan.ta"]
     df_trusted = df_valid.drop("rejection_reason")
     for mc in mac_cols:
         if mc in df_trusted.columns:
-            # Usar backticks (`) para que Spark no confunda los puntos con campos anidados
             df_trusted = df_trusted.withColumn(mc, pseudo_udf(col(f"`{mc}`")))
 
     trusted_table = f"glue_catalog.{catalog_db}.trusted_awid3"
-    print(f"Escribiendo a tabla Iceberg Trusted: {trusted_table} ...")
-    df_trusted.writeTo(trusted_table) \
-              .tableProperty("format-version", "2") \
-              .tableProperty("location", f"s3://{trusted_bucket}/trusted/") \
-              .createOrReplace()
+    save_iceberg_table(df_trusted, trusted_table, f"s3://{trusted_bucket}/trusted/", spark)
 
-    # 5. Escribir registros inválidos a Quarantine (Parquet simple)
+    # 5. Escribir registros inválidos a Quarantine (Parquet)
     if invalid_count > 0:
         print(f"Escribiendo {invalid_count} registros inválidos a Quarantine...")
         df_invalid.write.parquet(

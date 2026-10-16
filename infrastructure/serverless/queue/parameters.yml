@@ -1,0 +1,33 @@
+Resources:
+  AlertsQueueUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/queue/AlertsQueueUrl
+      Type: String
+      Value: !Ref AlertsQueue
+      Description: URL de la cola SQS de alertas de NexaSecure
+
+  AlertsQueueArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/queue/AlertsQueueArn
+      Type: String
+      Value: !GetAtt AlertsQueue.Arn
+      Description: ARN de la cola SQS de alertas de NexaSecure
+
+  AlertsDLQUrlParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/queue/AlertsDLQUrl
+      Type: String
+      Value: !Ref AlertsDLQ
+      Description: URL de la Dead Letter Queue de alertas
+
+  AlertsDLQArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/queue/AlertsDLQArn
+      Type: String
+      Value: !GetAtt AlertsDLQ.Arn
+      Description: ARN de la Dead Letter Queue de alertas
+

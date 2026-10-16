@@ -1,0 +1,18 @@
+Conditions:
+  HasAlertEmail: !Not [!Equals ["${env:ALERT_EMAIL, ''}", ""]]
+
+Resources:
+  SocAlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: nexasecure-soc-alerts-${self:provider.stage}
+      DisplayName: NexaSecure WIDS SOC Alerts
+
+  SocAlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref SocAlertsTopic
+      Protocol: email
+      Endpoint: ${env:ALERT_EMAIL, ''}
+
