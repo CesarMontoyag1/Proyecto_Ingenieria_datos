@@ -27,6 +27,15 @@ Resources:
         - Name: InstallPyFlinkAndDependencies
           ScriptBootstrapAction:
             Path: !Sub "s3://${ssm:/nexasecure/${self:provider.stage}/storage/RawAwid3BucketName}/bootstrap/emr-bootstrap.sh"
+      Steps:
+        - Name: NexaSecureDetectionJob
+          ActionOnFailure: CONTINUE
+          HadoopJarStep:
+            Jar: command-runner.jar
+            Args:
+              - bash
+              - -c
+              - !Sub "export AWS_DEFAULT_REGION=us-east-1 AWS_REGION=us-east-1 STAGE=${self:provider.stage} PYTHONPATH=/home/hadoop/flink-app:$PYTHONPATH && aws s3 cp s3://${ssm:/nexasecure/${self:provider.stage}/storage/RawAwid3BucketName}/flink-app/ /home/hadoop/flink-app/ --recursive && cd /home/hadoop/flink-app && python3 -u -m src.detection_job"
 
   ClusterIdParameter:
     Type: AWS::SSM::Parameter

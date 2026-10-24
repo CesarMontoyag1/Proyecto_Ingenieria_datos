@@ -1,4 +1,5 @@
 import collections
+import os
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -47,6 +48,8 @@ class DetectionEngine:
         deauth_window_sec: float = 5.0,
         disas_threshold: int = 10,
         disas_window_sec: float = 5.0,
+        ssdp_threshold: int = 15,
+        ssdp_window_sec: float = 5.0,
         alert_cooldown_sec: float = 60.0,
         ssid_whitelist: Optional[Dict[str, Set[str]]] = None
     ):
@@ -55,7 +58,9 @@ class DetectionEngine:
         self.deauth_window_sec = deauth_window_sec
         self.disas_threshold = disas_threshold
         self.disas_window_sec = disas_window_sec
-        self.alert_cooldown_sec = alert_cooldown_sec
+        self.ssdp_threshold = ssdp_threshold
+        self.ssdp_window_sec = ssdp_window_sec
+        self.alert_cooldown_sec = float(os.environ.get("ALERT_COOLDOWN_SEC", str(alert_cooldown_sec)))
 
         # Lista blanca de BSSIDs legítimos por SSID: { 'CorpNet': {'00:11:22:33:44:55', ...} }
         self.ssid_whitelist = ssid_whitelist or {
@@ -68,6 +73,8 @@ class DetectionEngine:
         self.deauth_events: Dict[str, collections.deque] = collections.defaultdict(collections.deque)
         # disas/assoc: { sa: deque([(timestamp, bssid), ...]) }
         self.disas_events: Dict[str, collections.deque] = collections.defaultdict(collections.deque)
+        # ssdp flood: { bssid: deque([(timestamp, sa), ...]) }
+        self.ssdp_events: Dict[str, collections.deque] = collections.defaultdict(collections.deque)
 
         # Registro de deduplicación de alertas: { (rule_type, bssid): last_alert_time }
         self.last_alert_time: Dict[Tuple[str, str], float] = {}
@@ -93,12 +100,15 @@ class DetectionEngine:
                     elif rule_type == "DISAS_BURST":
                         self.disas_threshold = int(threshold)
                         self.disas_window_sec = float(window_sec)
+                    elif rule_type == "SSDP_FLOOD":
+                        self.ssdp_threshold = int(threshold)
+                        self.ssdp_window_sec = float(window_sec)
             return True
         except Exception:
             return False
 
     def _should_suppress_alert(self, rule_type: str, bssid: str, current_time: float) -> bool:
-        """Verifica si la alerta está en periodo de enfriamiento (cooldown de 60s)."""
+        """Verifica si la alerta está en periodo de enfriamiento (cooldown)."""
         key = (rule_type, bssid)
         last_time = self.last_alert_time.get(key)
         if last_time is not None and (current_time - last_time) < self.alert_cooldown_sec:
@@ -237,6 +247,60 @@ class DetectionEngine:
             }
         return None
 
+    def check_ssdp_flood(self, record: Dict[str, Any], event_time: float) -> Optional[Dict[str, Any]]:
+        """
+        Regla 4: SSDP Flood / Amplification DoS
+        Detecta ráfagas masivas de paquetes SSDP/UPnP (puerto UDP 1900 o campo ssdp activo en AWID3)
+        hacia un mismo BSSID/dispositivo en una ventana corta de tiempo.
+        """
+        is_ssdp = False
+        ssdp_val = _clean_str(record.get("ssdp"))
+        if ssdp_val and ssdp_val.lower() not in ("0", "false", "nan", "none", ""):
+            is_ssdp = True
+        elif _clean_str(record.get("udp.dstport")) == "1900" or _clean_str(record.get("udp.srcport")) == "1900":
+            is_ssdp = True
+        elif _clean_str(record.get("Label")).lower() == "ssdp":
+            is_ssdp = True
+
+        if not is_ssdp:
+            return None
+
+        raw_bssid = _clean_str(record.get("wlan.bssid") or record.get("wlan.da") or record.get("wlan.ra"))
+        raw_sa = _clean_str(record.get("wlan.sa") or record.get("wlan.ta") or record.get("ip.src"))
+
+        if not raw_bssid:
+            raw_bssid = "00:00:00:00:00:00"
+
+        q = self.ssdp_events[raw_bssid]
+        q.append((event_time, raw_sa))
+        min_time = event_time - self.ssdp_window_sec
+        while q and q[0][0] < min_time:
+            q.popleft()
+
+        count = len(q)
+        if count >= self.ssdp_threshold:
+            pseudo_bssid = pseudonymize_mac(raw_bssid, self.hmac_key)
+            if self._should_suppress_alert("SSDP_FLOOD", pseudo_bssid, event_time):
+                return None
+
+            pseudo_sa = pseudonymize_mac(raw_sa, self.hmac_key) if raw_sa else "N/A"
+            return {
+                "alert_id": str(uuid.uuid4()),
+                "rule_type": "SSDP_FLOOD",
+                "severity": "HIGH",
+                "bssid": pseudo_bssid,
+                "src_mac": pseudo_sa,
+                "observed_count": count,
+                "threshold": self.ssdp_threshold,
+                "window_seconds": self.ssdp_window_sec,
+                "timestamp": event_time,
+                "details": {
+                    "reason": "Ráfaga masiva de paquetes SSDP/UPnP detectada (DDoS de amplificación / saturación Wi-Fi)",
+                    "protocol": "SSDP/UDP 1900"
+                }
+            }
+        return None
+
     def process_event(self, record: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         Evalúa todas las reglas de detección sobre el registro y retorna una lista de alertas generadas.
@@ -258,6 +322,11 @@ class DetectionEngine:
         a3 = self.check_disas_burst(record, event_time)
         if a3:
             alerts.append(a3)
+
+        # Regla 4: SSDP Flood
+        a4 = self.check_ssdp_flood(record, event_time)
+        if a4:
+            alerts.append(a4)
 
         return alerts
 

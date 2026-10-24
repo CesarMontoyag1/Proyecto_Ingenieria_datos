@@ -197,9 +197,15 @@ def process_event_record(
     now_utc = datetime.now(timezone.utc).isoformat()
     raw_event_epoch = record.get("frame.time_epoch")
     try:
-        event_time = float(raw_event_epoch) if raw_event_epoch is not None else time.time()
+        raw_time = float(raw_event_epoch) if raw_event_epoch is not None else time.time()
     except (ValueError, TypeError):
-        event_time = time.time()
+        raw_time = time.time()
+
+    # En streaming con datasets históricos (como AWID3 del 2020), si el timestamp
+    # tiene más de 1 día de antigüedad se usa wall-clock actual para que la ventana
+    # y la medición de latencia SLA (< 2s) reflejen la transmisión en vivo.
+    now = time.time()
+    event_time = now if abs(now - raw_time) > 86400 else raw_time
 
     # 1. Validación de Calidad
     validation = validate_record(record)
