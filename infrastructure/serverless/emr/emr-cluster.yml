@@ -19,9 +19,9 @@ Resources:
         TerminationProtected: false
       AutoTerminationPolicy:
         IdleTimeout: 1800 # 30 minutos de inactividad antes de auto-terminar para proteger créditos
-      # Roles existentes de AWS Academy Learner Lab (sin declarar AWS::IAM::Role)
-      JobFlowRole: ${env:EMR_JOB_FLOW_ROLE, 'LabInstanceProfile'}
-      ServiceRole: ${env:EMR_SERVICE_ROLE, 'LabRole'}
+      # Roles estándar de Amazon EMR (con fallback configurable para Learner Lab vía env)
+      JobFlowRole: ${env:EMR_JOB_FLOW_ROLE, 'EMR_EC2_DefaultRole'}
+      ServiceRole: ${env:EMR_SERVICE_ROLE, 'EMR_DefaultRole'}
       VisibleToAllUsers: true
       BootstrapActions:
         - Name: InstallPyFlinkAndDependencies

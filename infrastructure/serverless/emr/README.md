@@ -7,16 +7,16 @@ Este módulo gestiona el clúster transitorio de **Amazon EMR** con **Apache Fli
 
 ---
 
-## 1. Encender el Clúster
+## 1. Encender y Desplegar el Clúster
 
-Antes de desplegar, subir el script de bootstrap a S3:
-```bash
-RAW_BUCKET=$(aws ssm get-parameter --name /nexasecure/dev/storage/RawAwid3BucketName --query Parameter.Value --output text)
-aws s3 cp bootstrap/emr-bootstrap.sh s3://${RAW_BUCKET}/bootstrap/emr-bootstrap.sh
-```
+El despliegue es **100% automático** mediante el plugin `serverless-s3-sync`: antes de crear el clúster, Serverless sincroniza automáticamente a S3:
+- El script de bootstrap (`bootstrap/emr-bootstrap.sh` -> `s3://.../bootstrap/`)
+- La aplicación Flink completa (`flink-app/` -> `s3://.../flink-app/`)
 
-Desplegar el clúster EMR mediante Serverless Framework:
+Para desplegar:
 ```bash
+cd /app/infrastructure/serverless/emr
+npm install
 serverless deploy --stage dev
 ```
 
@@ -30,12 +30,7 @@ echo "EMR Cluster ID: $CLUSTER_ID"
 
 ## 2. Lanzar el Job de Detección (PyFlink Step)
 
-1. Subir la aplicación Flink a S3:
-```bash
-aws s3 cp ../../../flink-app/ s3://${RAW_BUCKET}/flink-app/ --recursive
-```
-
-2. Ejecutar el Step en el clúster EMR:
+Ejecutar el Step en el clúster EMR:
 ```bash
 aws emr add-steps \
   --cluster-id $CLUSTER_ID \
