@@ -66,6 +66,35 @@ def write_to_quarantine_s3(
     )
 
 
+def write_trusted_batch_to_s3(
+    s3_client,
+    bucket_name: str,
+    records: List[Dict[str, Any]]
+) -> None:
+    """Escribe un micro-lote de registros válidos y seudonimizados (Zero-PII) en la zona Trusted de S3."""
+    if not records or not bucket_name or not s3_client:
+        return
+    now_utc = datetime.now(timezone.utc)
+    key = (
+        f"streaming/year={now_utc.strftime('%Y')}/month={now_utc.strftime('%m')}/"
+        f"day={now_utc.strftime('%d')}/trusted_{int(time.time() * 1000)}_{len(records)}.json"
+    )
+    body = "\n".join(json.dumps(r) for r in records)
+    try:
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=key,
+            Body=body.encode("utf-8"),
+            ContentType="application/x-ndjson"
+        )
+        logger.info(
+            "Micro-lote de %d registros seudonimizados persistido en S3 Trusted: s3://%s/%s",
+            len(records), bucket_name, key
+        )
+    except Exception as e:
+        logger.error("Error al persistir lote en S3 Trusted: %s", e)
+
+
 def publish_alert_to_sqs(
     sqs_client,
     queue_url: str,
@@ -246,6 +275,7 @@ def run_kinesis_consumer(
     hmac_key: bytes,
     quarantine_bucket: str,
     alerts_queue_url: str,
+    trusted_bucket: Optional[str] = None,
     region_name: str = "us-east-1",
     poll_interval: float = 1.0,
     iterator_type: str = "LATEST",
@@ -276,6 +306,10 @@ def run_kinesis_consumer(
 
     logger.info("Consumidor activo y escuchando eventos en tiempo real. (Presiona Ctrl+C para detener)")
     total_processed = 0
+    trusted_buffer: List[Dict[str, Any]] = []
+    last_flush_time = time.time()
+    BUFFER_SIZE = 25
+    FLUSH_INTERVAL = 5.0
 
     try:
         while True:
@@ -294,7 +328,7 @@ def run_kinesis_consumer(
                         data_bytes = r.get("Data", b"{}")
                         try:
                             record_dict = json.loads(data_bytes.decode("utf-8"))
-                            process_event_record(
+                            is_val, trusted_rec, _ = process_event_record(
                                 record=record_dict,
                                 detection_engine=detection_engine,
                                 hmac_key=hmac_key,
@@ -304,13 +338,23 @@ def run_kinesis_consumer(
                                 sqs_client=sqs_client,
                                 db_conn=db_conn
                             )
+                            if is_val and trusted_rec and trusted_bucket:
+                                trusted_buffer.append(trusted_rec)
                         except Exception as e:
                             logger.error("Error al procesar registro de Kinesis: %s", e)
+
+            # Escribir micro-lote en S3 Trusted si se alcanzó el tamaño o tiempo de flush
+            if trusted_bucket and trusted_buffer and (len(trusted_buffer) >= BUFFER_SIZE or (time.time() - last_flush_time) >= FLUSH_INTERVAL):
+                write_trusted_batch_to_s3(s3_client, trusted_bucket, trusted_buffer)
+                trusted_buffer.clear()
+                last_flush_time = time.time()
 
             # Pequeña pausa para no saturar la API de Kinesis si no hay registros
             if not had_records:
                 time.sleep(poll_interval)
     except KeyboardInterrupt:
+        if trusted_bucket and trusted_buffer:
+            write_trusted_batch_to_s3(s3_client, trusted_bucket, trusted_buffer)
         logger.info("Consumidor detenido por el usuario. Total eventos procesados: %d", total_processed)
 
 
@@ -339,6 +383,10 @@ def main():
         "QUARANTINE_BUCKET",
         resolve_ssm_parameter(ssm, f"/nexasecure/{stage}/storage/QuarantineAwid3BucketName")
     )
+    trusted_bucket = os.environ.get(
+        "TRUSTED_BUCKET",
+        resolve_ssm_parameter(ssm, f"/nexasecure/{stage}/storage/TrustedAwid3BucketName")
+    )
     alerts_queue_url = os.environ.get(
         "ALERTS_QUEUE_URL",
         resolve_ssm_parameter(ssm, f"/nexasecure/{stage}/queue/AlertsQueueUrl")
@@ -348,6 +396,8 @@ def main():
     logger.info("=== NexaSecure WIDS Detection Job (Streaming) ===")
     logger.info("Región AWS:        %s", region_name)
     logger.info("Stream Kinesis:    %s", stream_name)
+    logger.info("Bucket Raw (Firehose): raw/streaming/")
+    logger.info("Bucket Trusted:    %s", trusted_bucket)
     logger.info("Bucket Quarantine: %s", quarantine_bucket)
     logger.info("Cola SQS Alertas:  %s", alerts_queue_url)
 
@@ -370,6 +420,7 @@ def main():
         hmac_key=hmac_key,
         quarantine_bucket=quarantine_bucket,
         alerts_queue_url=alerts_queue_url,
+        trusted_bucket=trusted_bucket,
         region_name=region_name,
         iterator_type=iterator_type,
         db_conn=db_conn
