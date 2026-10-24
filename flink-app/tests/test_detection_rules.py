@@ -108,7 +108,7 @@ class TestDetectionRules(unittest.TestCase):
 
         alert = alerts[0]
         self.assertEqual(alert["rule_type"], "ROGUE_AP")
-        self.assertEqual(alert["severity"], "HIGH")
+        self.assertEqual(alert["severity"], "CRITICAL")
         self.assertEqual(alert["bssid"], pseudonymize_mac(rogue_bssid, TEST_KEY))
         self.assertIn("Rogue AP", alert["details"]["reason"])
 

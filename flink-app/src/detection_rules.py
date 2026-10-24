@@ -45,8 +45,8 @@ class DetectionEngine:
         hmac_key: bytes,
         deauth_threshold: int = 10,
         deauth_window_sec: float = 5.0,
-        disas_threshold: int = 8,
-        disas_window_sec: float = 10.0,
+        disas_threshold: int = 10,
+        disas_window_sec: float = 5.0,
         alert_cooldown_sec: float = 60.0,
         ssid_whitelist: Optional[Dict[str, Set[str]]] = None
     ):
@@ -71,6 +71,31 @@ class DetectionEngine:
 
         # Registro de deduplicación de alertas: { (rule_type, bssid): last_alert_time }
         self.last_alert_time: Dict[Tuple[str, str], float] = {}
+
+    def load_rules_from_rds(self, db_conn) -> bool:
+        """
+        Carga umbrales y severidades dinámicamente desde la tabla rule_catalog en RDS.
+        Permite recalibrar la sensibilidad de detección sin requerir redeploy del job de Flink.
+        """
+        if not db_conn:
+            return False
+        try:
+            with db_conn.cursor() as cur:
+                cur.execute(
+                    "SELECT rule_type, default_severity, default_threshold, default_window_seconds "
+                    "FROM rule_catalog WHERE enabled = TRUE"
+                )
+                rows = cur.fetchall()
+                for rule_type, severity, threshold, window_sec in rows:
+                    if rule_type == "DEAUTH_FLOOD":
+                        self.deauth_threshold = int(threshold)
+                        self.deauth_window_sec = float(window_sec)
+                    elif rule_type == "DISAS_BURST":
+                        self.disas_threshold = int(threshold)
+                        self.disas_window_sec = float(window_sec)
+            return True
+        except Exception:
+            return False
 
     def _should_suppress_alert(self, rule_type: str, bssid: str, current_time: float) -> bool:
         """Verifica si la alerta está en periodo de enfriamiento (cooldown de 60s)."""
@@ -151,12 +176,12 @@ class DetectionEngine:
                 return {
                     "alert_id": str(uuid.uuid4()),
                     "rule_type": "ROGUE_AP",
-                    "severity": "HIGH",
+                    "severity": "CRITICAL",
                     "bssid": pseudo_bssid,
                     "src_mac": pseudo_bssid,
                     "observed_count": 1,
                     "threshold": 1,
-                    "window_seconds": 0.0,
+                    "window_seconds": 1.0,
                     "timestamp": event_time,
                     "details": {
                         "ssid": ssid,
