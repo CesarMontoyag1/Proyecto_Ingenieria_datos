@@ -1,4 +1,10 @@
 Resources:
+  TrustedOptimizationJobNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/glue/TrustedOptimizationJobName
+      Type: String
+      Value: !Ref TrustedOptimizationJob
   GlueCatalogDatabaseNameParameter:
     Type: AWS::SSM::Parameter
     Properties:

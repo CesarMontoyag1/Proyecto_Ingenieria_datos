@@ -1,6 +1,6 @@
 """
 Job de ingesta batch del dataset AWID3.
-Autocontenido: no depende de módulos externos en src/.
+El layout Trusted se entrega mediante iceberg_layout.py (--extra-py-files).
 Flujo:
   1. Lee CSVs incrementalmente desde landing/batch/ usando AWS Glue Job Bookmarks.
   2. Escribe TODO sin filtro a la tabla Iceberg de Raw (inmutabilidad).
@@ -20,6 +20,7 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 from pyspark.sql.functions import col, udf, struct
 from pyspark.sql.types import StringType
+from iceberg_layout import assert_migrated, save_trusted, table_identifier
 
 
 # ─── Lógica de validación (Calibrada para 802.11) ─────────────────────────────
@@ -151,12 +152,17 @@ def main():
     conf.set("spark.sql.catalog.glue_catalog.catalog-impl", "org.apache.iceberg.aws.glue.GlueCatalog")
     conf.set("spark.sql.catalog.glue_catalog.io-impl", "org.apache.iceberg.aws.s3.S3FileIO")
     conf.set("spark.sql.catalog.glue_catalog.warehouse", f"s3://{raw_bucket}/iceberg-warehouse/")
+    conf.set("spark.sql.session.timeZone", "UTC")
 
     sc = SparkContext(conf=conf)
     glue_ctx = GlueContext(sc)
     spark = glue_ctx.spark_session
     job = Job(glue_ctx)
     job.init(args['JOB_NAME'], args)
+
+    trusted_table = table_identifier(catalog_db, 'trusted_awid3')
+    # Fail before touching Raw/bookmarks if the existing Trusted needs migration.
+    assert_migrated(spark, trusted_table)
 
     print(f"Usando Glue Catalog Database: {catalog_db}")
 
@@ -215,8 +221,7 @@ def main():
         if mc in df_trusted.columns:
             df_trusted = df_trusted.withColumn(mc, pseudo_udf(col(f"`{mc}`")))
 
-    trusted_table = f"glue_catalog.{catalog_db}.trusted_awid3"
-    save_iceberg_table(df_trusted, trusted_table, f"s3://{trusted_bucket}/trusted/", spark)
+    save_trusted(df_trusted, trusted_table, f"s3://{trusted_bucket}/trusted/", spark)
 
     # 5. Escribir registros inválidos a Quarantine (Parquet)
     if invalid_count > 0:
