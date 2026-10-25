@@ -32,6 +32,13 @@ Copia inmutable del CSV fuente, sin ningún filtro ni transformación. Las 254 c
 
 Igual esquema que Raw, excepto que `wlan.bssid`, `wlan.sa`, `wlan.da`, `wlan.ra`, `wlan.ta` están seudonimizadas con HMAC-SHA256 (ver [Reglas de calidad](#reglas-de-calidad-ya-implementadas)). Confidencial: identificadores ya seudonimizados, consultable por el equipo de desarrollo y por Athena/Redshift para análisis.
 
+La optimización de Daniel agrega `event_date` (`DATE`), derivada de
+`frame.time_epoch` en UTC: Trusted tiene las 254 columnas originales más esta
+columna técnica. Se particiona por `event_date` y `Label`, y se ordena por
+`wlan.bssid`. La tabla `trusted_awid3_baseline` conserva una copia seudonimizada
+sin optimizar para validar la migración y el benchmark; tiene el mismo nivel de
+acceso que Trusted. El NDJSON de streaming mantiene su formato anterior.
+
 ### Zona Quarantine (S3, Parquet `quarantine_awid3`)
 
 Registros que no pasaron la validación, con la columna adicional `rejection_reason` para auditar por qué. Mismo nivel de sensibilidad que Raw (no seudonimizado) — acceso igualmente restringido.

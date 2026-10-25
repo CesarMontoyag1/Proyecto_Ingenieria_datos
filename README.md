@@ -25,7 +25,7 @@ Construido y funcional:
 - Ruta de ingesta en streaming: `flink-app` sobre Amazon EMR, que valida, seudonimiza y evalúa reglas de detección en tiempo real (Deauth Flood, Rogue AP, Disas Burst) con alertas publicadas a SQS/SNS vía `alert_formatter`.
 - Job de mantenimiento de Iceberg (compactación de archivos y expiración de snapshots).
 - Capa transaccional en RDS PostgreSQL: catálogo de reglas, alertas, casos de incidente y bitácora de auditoría, con RBAC de 2 perfiles (`security_analyst`, `auditor`).
-- **2 optimizaciones de base de datos aplicadas:** particionamiento + bloom filter sobre `trusted_awid3` (Iceberg/Athena) e índices BRIN/GIN/parcial sobre la capa transaccional (RDS) — comparativo antes/después documentado en la presentación del Sprint 2.
+- **Optimización analítica implementada:** particiones por fecha/etiqueta, orden por BSSID y bloom filters sobre `trusted_awid3`, con [comparativo reproducible en Athena](docs/optimizacion/iceberg/evidencia/resultados.md). En RDS están aplicados los índices BRIN/GIN/parcial/compuesto; el comparativo de César requiere que Luis genere alertas.
 - Gobernanza consolidada en `DATA_GOVERNANCE.md` (diccionario de datos, catálogo, linaje, matriz RACI, reglas de calidad).
 - Módulos de validación, seudonimización y detección probados con pruebas unitarias (pytest).
 
@@ -35,7 +35,23 @@ Pendiente para el Sprint Final (fuera de alcance de Sprint 2 por definición de 
 
 
 ### Diagrama de arquitectura (Actual):
-<img width="2224" height="2011" alt="diagrama_datos" src="https://github.com/user-attachments/assets/56e81bce-b3d5-45ef-bf0b-3ba48591752c" />
+![Arquitectura actual de NexaSecure](docs/nexasecure_wids_-_arquitectura_streaming_&_batch.png)
+
+La imagen se genera con `docs/architecture.py` (PNG y SVG). Distingue el
+consumidor Python actual sobre EMR de la futura ejecución PyFlink, y los JSON
+de streaming de la tabla Iceberg batch.
+
+### Entregables de Daniel: RDS y optimización Iceberg
+
+- [RDS: despliegue, migraciones y parámetros para la integración](infrastructure/serverless/rds/README.md).
+- [Iceberg: migración de Trusted y benchmark reproducible en Athena](docs/optimizacion/iceberg/procedimiento.md).
+- [Evidencias del comparativo](docs/optimizacion/iceberg/evidencia/).
+
+Los comandos de `scripts/` usan las credenciales locales de `.envs/aws.env`
+en `us-east-1`; la infraestructura está preparada para una cuenta AWS normal.
+Antes de ejecutar la nueva ingesta batch sobre una Trusted existente, completar
+`TrustedOptimizationJob`. No reiniciar bookmarks ni volver a cargar Raw para
+aplicar el cambio de particiones.
 
 ---
 
@@ -49,7 +65,8 @@ Contiene los stacks de Serverless Framework para desplegar la infraestructura en
 * **`storage/`**: Crea los buckets de S3 para las capas del Lakehouse (`Raw`, `Trusted`, `Quarantine`) y publica sus nombres en el Parameter Store (SSM) de AWS.
 * **`streaming/`**: Configura un **Kinesis Data Stream** como bus de entrada para eventos en tiempo real, acoplado con **Kinesis Data Firehose** para guardar automáticamente los eventos `.json` crudos en el bucket Raw (zona `raw/streaming/`).
 * **`glue/`**: Implementa el ecosistema batch y el catálogo de datos. Crea el **Glue Data Catalog**, los **Glue Crawlers** (para detectar esquemas), los **Triggers** y los **Glue Jobs** (Spark) que procesan la información.
-* **`emr/`**: (Placeholder para fases avanzadas) Cluster EMR Serverless para correr aplicaciones de Apache Flink.
+* **`emr/`**: Clúster Amazon EMR sobre EC2 con un consumidor Python/boto3. La ejecución con el motor PyFlink sigue pendiente.
+* **`rds/`**: PostgreSQL privado para el catálogo de reglas, alertas, casos y auditoría; credenciales en Secrets Manager y migraciones mediante un ejecutor SSM temporal.
 
 ### 2. `ingestion-tools/` (Simulador de Datos desde Kaggle)
 Herramientas de desarrollo local en Python (aisladas en su propio contenedor Docker) para inyectar datos reales del dataset AWID3 sin descargar los 46GB completos, ahorrando costos y ancho de banda.
