@@ -6,6 +6,7 @@ Este documento mapea cada dato, tabla y responsabilidad del pipeline descrito en
 - [Catálogo de datos](#catálogo-de-datos)
 - [Linaje](#linaje)
 - [Matriz RACI](#matriz-raci)
+- [Control de acceso (RBAC)](#control-de-acceso-rbac)
 - [Reglas de calidad ya implementadas](#reglas-de-calidad-ya-implementadas)
 
 ## Diccionario de datos
@@ -31,6 +32,13 @@ Copia inmutable del CSV fuente, sin ningún filtro ni transformación. Las 254 c
 
 Igual esquema que Raw, excepto que `wlan.bssid`, `wlan.sa`, `wlan.da`, `wlan.ra`, `wlan.ta` están seudonimizadas con HMAC-SHA256 (ver [Reglas de calidad](#reglas-de-calidad-ya-implementadas)). Confidencial: identificadores ya seudonimizados, consultable por el equipo de desarrollo y por Athena/Redshift para análisis.
 
+La optimización de Daniel agrega `event_date` (`DATE`), derivada de
+`frame.time_epoch` en UTC: Trusted tiene las 254 columnas originales más esta
+columna técnica. Se particiona por `event_date` y `Label`, y se ordena por
+`wlan.bssid`. La tabla `trusted_awid3_baseline` conserva una copia seudonimizada
+sin optimizar para validar la migración y el benchmark; tiene el mismo nivel de
+acceso que Trusted. El NDJSON de streaming mantiene su formato anterior.
+
 ### Zona Quarantine (S3, Parquet `quarantine_awid3`)
 
 Registros que no pasaron la validación, con la columna adicional `rejection_reason` para auditar por qué. Mismo nivel de sensibilidad que Raw (no seudonimizado) — acceso igualmente restringido.
@@ -42,7 +50,7 @@ Registros que no pasaron la validación, con la columna adicional `rejection_rea
 | `rule_catalog` | `rule_type`, `default_severity`, `default_threshold`, `default_window_seconds` | Catálogo de las reglas de detección (Deauth Flood, Rogue AP, Disas Burst) |
 | `alerts` | `rule_type` (FK), `severity`, `bssid_pseudo`, `src_mac_pseudo`, `detected_at`, `details` (JSONB) | Append-only. `bssid_pseudo`/`src_mac_pseudo` llegan ya seudonimizados desde `flink-app` — RDS nunca recibe una MAC en texto plano |
 | `incident_cases` | `alert_id` (FK), `status`, `assigned_to`, `resolution_notes` | Casos abiertos por el analista SOC a partir de una alerta |
-| `audit_log` | `actor`, `action`, `target_table`, `performed_at` | Bitácora inmutable de consultas sensibles (ver [RBAC](#reglas-de-calidad-ya-implementadas)) |
+| `audit_log` | `actor`, `action`, `target_table`, `performed_at` | Bitácora de consultas sensibles. Su inmutabilidad todavía no está aplicada: falta el `REVOKE` y el rol que escribe (ver [RBAC](#control-de-acceso-rbac)) |
 
 Ninguna tabla de RDS contiene una dirección MAC en texto plano ni ningún otro campo PII del dataset original.
 
@@ -62,7 +70,7 @@ Credenciales también forman parte del catálogo porque definen quién puede lee
 1. El dataset AWID3-CSV llega por dos rutas: batch (`kaggle_batch_loader.py` sube el CSV a `landing/batch/`) y streaming (`kaggle_stream_simulator.py` inyecta eventos a Kinesis Data Stream).
 2. Ruta batch: `glue-jobs/src/batch_ingest_job.py` escribe una copia sin filtrar en `raw_awid3`, valida cada fila con `_validate_record_logic` (calibrada por tipo de trama 802.11), seudonimiza las MAC válidas con HMAC-SHA256 y escribe en `trusted_awid3`; las filas rechazadas van a `quarantine_awid3` con su `rejection_reason`.
 3. Ruta streaming: Kinesis Firehose persiste el evento crudo en `raw/streaming/` sin transformar. `flink-app/src/detection_job.py` consume el stream, valida, seudonimiza (mismo algoritmo HMAC-SHA256, misma llave en Secrets Manager que el job batch) y escribe en `trusted_awid3`, evaluando en paralelo las reglas de `detection_rules.py`.
-4. Si una regla dispara, `detection_job.py` inserta una fila en `alerts` (RDS) y publica a la cola SQS de alertas; `backend/src/alert_formatter/handler.py` la formatea y notifica (SNS/Slack).
+4. Si una regla dispara, `detection_job.py` inserta una fila en `alerts` (RDS) y publica a la cola SQS de alertas; `backend/serverless/alerts/handler.py` la formatea y notifica (SNS/Slack) mediante la Lambda `alertFormatter`.
 5. El analista SOC abre un `incident_cases` a partir de una alerta, y cada consulta que hace sobre `alerts`/`incident_cases` con el rol `security_analyst` queda escrita en `audit_log`.
 6. Las consultas analíticas (Athena/Redshift, Sprint Final) leen exclusivamente de `trusted_awid3`, nunca de Raw ni Quarantine.
 
@@ -79,17 +87,42 @@ Roles tomados de la matriz de stakeholders del Sprint 0 (sección 2.3):
 
 | Actividad | CISO | Arquitecto Cloud | Oficial Cumplimiento/DPO | Analista SOC |
 | --- | --- | --- | --- | --- |
-| Diseñar y mantener las reglas de validación de calidad | I | R, A | C | I |
-| Seudonimizar y proteger las MAC (PII) | I | R | A | |
-| Decidir qué campos se excluyen o enmascaran por PII | | R | A | |
-| Diseñar y operar el pipeline (Glue, Flink, RDS) | I | R, A | | I |
-| Aprobar el acceso de solo lectura de los roles `security_analyst`/`auditor` | | R | A | I |
-| Consultar alertas y gestionar casos de incidente | | | | R, A |
-| Responder a un incidente de seguridad o filtración de datos | C | R | A | R |
-| Revisar y aprobar cambios al esquema de datos | C | R | A | I |
-| Auditar la bitácora de consultas sensibles | | I | R, A | I |
+| Diseñar y mantener las reglas de validación de calidad | I | R | A | C |
+| Definir los criterios de aceptación de calidad | I | C | A | R |
+| Seudonimizar y proteger las MAC (PII) | I | R | A | C |
+| Decidir qué campos se excluyen o enmascaran por PII | C | R | A | C |
+| Diseñar y operar el pipeline (Glue, Flink, RDS) | I | R | A | C |
+| Aprobar el acceso de solo lectura de los roles `security_analyst`/`auditor` | C | R | A | I |
+| Consultar alertas y gestionar casos de incidente | A | I | C | R |
+| Responder a un incidente de seguridad o filtración de datos | A | R | C | R |
+| Proponer cambios al esquema de datos | I | R | C | C |
+| Aprobar cambios al esquema de datos | A | C | R | C |
+| Auditar la bitácora de consultas sensibles | A | I | R | C |
 
-R: Responsable. A: Aprueba/dueño. C: Consultado. I: Informado.
+R: Responsable de ejecutar o coordinar. A: Aprueba y asume la decisión final. C: Consultado antes de ejecutar. I: Informado. Para conservar independencia, ninguna actividad asigna `R` y `A` al mismo rol; la aprobación corresponde a un rol distinto del que ejecuta el trabajo.
+
+## Control de acceso (RBAC)
+
+La rúbrica del Sprint 0 (sección 3.2, Componente 3) pide cuatro perfiles con mínimo privilegio. Dos se implementan como roles de PostgreSQL sobre RDS y los otros dos como roles de IAM sobre el resto de la arquitectura.
+
+| Perfil | Mecanismo | Puede | No puede |
+| --- | --- | --- | --- |
+| Analista de seguridad (`security_analyst`) | Rol PostgreSQL, `backend/database/rds/migrations/003_readonly_role.sql` | Leer `alerts` y `rule_catalog`; leer, crear y cambiar el estado de `incident_cases` | Leer `audit_log`; modificar reglas; escribir en `alerts` |
+| Auditor (`auditor`) | Rol PostgreSQL, `003_readonly_role.sql` | Leer todas las tablas, incluida `audit_log` | Escribir en cualquier tabla |
+| Administrador de plataforma | Rol IAM definido | Desplegar y actualizar los stacks Serverless de `storage`, `streaming`, `glue`, `emr`, `queue`, `notifications`, `secrets` y RDS; administrar los parámetros SSM `/nexasecure/{stage}/*`; leer logs de CloudWatch | Leer el valor de `/nexasecure/{stage}/PiiHmacKey`; leer objetos de las zonas S3; usar las credenciales maestras de RDS |
+| Ingeniero de datos | Rol IAM definido | Ejecutar y monitorear los jobs y crawlers de Glue; leer `trusted_awid3` (seudonimizada) y consultar el Glue Data Catalog; enviar eventos al stream `nexasecure-wids-awid3-events-{stage}-{dev}`; consultar el estado del cluster EMR | Leer `raw_awid3` ni `quarantine_awid3` (texto plano); leer el valor de la llave HMAC; borrar objetos de Raw |
+
+Notas:
+
+- Las credenciales maestras de RDS quedan fuera de estos perfiles. Solo se usan para aplicar las migraciones y se guardan en Secrets Manager.
+- Los roles de Glue, EMR y Firehose que ya existen en `infrastructure/serverless/` son roles de servicio, no de personas. No se cuentan como perfiles de este RBAC.
+- Pendiente de decisión: si el ingeniero de datos necesita leer `quarantine_awid3` para el perfilamiento. Por ahora se propone que no; el perfilamiento se hace con consultas agregadas.
+
+Pendientes de RBAC:
+
+- **`audit_log` no tiene escritor.** Ni `security_analyst` ni `auditor` tienen `INSERT` sobre `audit_log`, y la aplicación debe insertar ahí antes de cada consulta sensible. Propuesta: un rol que solo pueda `INSERT` y `SELECT` sobre `audit_log`, y `REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM PUBLIC`, que es lo que haría real la inmutabilidad.
+- **La capa de aplicación no existe en el repositorio.** No hay código que abra conexiones con `security_analyst` o `auditor` ni que escriba en `audit_log`, así que todavía no se puede verificar que la bitácora se llene en cada consulta.
+- **Los roles IAM están definidos** con alcance y permisos mínimos en esta matriz; su materialización en políticas y stacks de infraestructura se gestiona de acuerdo con el entorno de despliegue.
 
 ## Reglas de calidad ya implementadas
 

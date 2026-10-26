@@ -1,0 +1,57 @@
+{
+  "snapshot_id": 5322829784210191203,
+  "files": [
+    {
+      "file": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted/data/event_date=2020-12-10/Label=Normal/00000-16-d3b39aa3-2e0f-4338-a34e-896e6bf45651-00001.parquet",
+      "bssid_row_groups": 1,
+      "bssid_bloom_row_groups": 1
+    },
+    {
+      "file": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted/data/event_date=2020-12-13/Label=Normal/00000-16-d3b39aa3-2e0f-4338-a34e-896e6bf45651-00002.parquet",
+      "bssid_row_groups": 1,
+      "bssid_bloom_row_groups": 1
+    },
+    {
+      "file": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted/data/event_date=2020-12-15/Label=Normal/00000-16-d3b39aa3-2e0f-4338-a34e-896e6bf45651-00003.parquet",
+      "bssid_row_groups": 1,
+      "bssid_bloom_row_groups": 1
+    },
+    {
+      "file": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted/data/event_date=2020-12-15/Label=Normal/00001-17-a8c48aaf-d8a7-4298-b175-c1a6bafc56ba-00001.parquet",
+      "bssid_row_groups": 1,
+      "bssid_bloom_row_groups": 1
+    },
+    {
+      "file": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted/data/event_date=2020-12-15/Label=Website_spoofing/00001-17-a8c48aaf-d8a7-4298-b175-c1a6bafc56ba-00002.parquet",
+      "bssid_row_groups": 1,
+      "bssid_bloom_row_groups": 1
+    },
+    {
+      "file": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted/data/event_date=2020-12-18/Label=Normal/00001-17-a8c48aaf-d8a7-4298-b175-c1a6bafc56ba-00003.parquet",
+      "bssid_row_groups": 1,
+      "bssid_bloom_row_groups": 1
+    },
+    {
+      "file": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted/data/event_date=2020-12-18/Label=Normal/00002-18-a3d523d3-f86d-43ff-b0f9-890e44037972-00001.parquet",
+      "bssid_row_groups": 1,
+      "bssid_bloom_row_groups": 1
+    },
+    {
+      "file": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted/data/event_date=2020-12-18/Label=Normal/00003-19-0c98301b-8ed1-4451-98d2-7dfbd1b2a660-00001.parquet",
+      "bssid_row_groups": 1,
+      "bssid_bloom_row_groups": 1
+    },
+    {
+      "file": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted/data/event_date=2020-12-22/Label=Normal/00003-19-0c98301b-8ed1-4451-98d2-7dfbd1b2a660-00002.parquet",
+      "bssid_row_groups": 1,
+      "bssid_bloom_row_groups": 1
+    },
+    {
+      "file": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted/data/event_date=2020-12-26/Label=Normal/00003-19-0c98301b-8ed1-4451-98d2-7dfbd1b2a660-00003.parquet",
+      "bssid_row_groups": 1,
+      "bssid_bloom_row_groups": 1
+    }
+  ],
+  "bssid_row_groups": 10,
+  "bssid_bloom_row_groups": 10
+}

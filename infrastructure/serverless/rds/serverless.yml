@@ -1,0 +1,17 @@
+service: nexasecure-rds
+frameworkVersion: '3'
+configValidationMode: error
+
+provider:
+  name: aws
+  region: us-east-1
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-rds-${self:provider.stage}
+
+custom:
+  deployment: ${file(../../../.envs/rds-${self:provider.stage}.json)}
+
+resources:
+  - ${file(networking.yml)}
+  - ${file(rds.yml)}
+  - ${file(parameters.yml)}
