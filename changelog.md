@@ -12,22 +12,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scripts de despliegue y migraciones RDS con TLS, bloqueo, checksum y registro de migraciones aplicadas.
 - `TrustedOptimizationJob`: baseline sin optimizar, particiones por fecha/Label, orden por BSSID, bloom filters Parquet y validación completa de filas antes/después.
 - Benchmark Athena reproducible con reutilización desactivada y evidencia de consultas, snapshots, tiempos y bytes escaneados.
+- Capturas manuales de RDS, migraciones, Glue y Athena en `docs/evidencias_capturas/`.
 ### Changed
 - Ingesta batch mantiene el layout optimizado de Trusted y comprueba la migración antes de escribir Raw.
-- Diagrama actualizado en Python, PNG y SVG con RDS, notificaciones y distinción entre Iceberg batch y JSON streaming.
+- Diagrama final mantenido en draw.io y exportado a PNG y PDF; `docs/architecture.py` conserva el generador de la versión anterior.
+- README actualizado con los entregables completados de Daniel, métricas verificadas y responsabilidades pendientes del equipo.
 
 ## [2.0.0] - 2026-10-26
 ### Added
 **Capa transaccional (AWS RDS PostgreSQL — Componente 2 "BD Avanzadas" del Sprint 0)**
-- `database/rds/migrations/001_schema.sql`: tablas `rule_catalog`, `alerts`, `incident_cases`, `audit_log`. Motor transaccional para alertas, casos de incidente y bitácora de auditoría, consistente con la postura CP definida en el Sprint 0.
-- `database/rds/migrations/002_indexes.sql`: índice BRIN sobre `alerts.detected_at`, GIN sobre `alerts.details`, parcial sobre `incident_cases` (solo casos abiertos) y compuesto sobre `(rule_type, severity)`.
-- `database/rds/migrations/003_readonly_role.sql`: roles `security_analyst` y `auditor` bajo mínimo privilegio.
-- `database/rds/demo_indexes.py`: comparativo reproducible antes/después (EXPLAIN ANALYZE) de la optimización de índices.
-- `infrastructure/serverless/rds/`: stack de Serverless Framework para desplegar la instancia RDS. *(Daniel — completar al desplegar)*
+- `backend/database/rds/migrations/001_schema.sql`: tablas `rule_catalog`, `alerts`, `incident_cases`, `audit_log`. Motor transaccional para alertas, casos de incidente y bitácora de auditoría, consistente con la postura CP definida en el Sprint 0.
+- `backend/database/rds/migrations/002_indexes.sql`: índice BRIN sobre `alerts.detected_at`, GIN sobre `alerts.details`, parcial sobre `incident_cases` (solo casos abiertos) y compuesto sobre `(rule_type, severity)`.
+- `backend/database/rds/migrations/003_readonly_role.sql`: roles `security_analyst` y `auditor` bajo mínimo privilegio.
+- `backend/database/rds/demo_indexes.py`: comparativo reproducible antes/después (EXPLAIN ANALYZE) de la optimización de índices; su ejecución requiere datos en `alerts` y queda a cargo de César.
+- `infrastructure/serverless/rds/`: stack de Serverless Framework desplegado con PostgreSQL privado y cifrado. Las tres migraciones se aplicaron en orden y se verificaron cuatro reglas, cuatro índices de optimización y los privilegios de ambos perfiles PostgreSQL.
 
 **Optimización de la capa analítica (Apache Iceberg)**
-- Particionamiento de `trusted_awid3` por fecha del evento y `Label`, habilitando *partition pruning* en consultas de Athena. *(Daniel — completar al implementar)*
-- Bloom filter / sort order sobre `wlan.bssid` para acelerar la búsqueda puntual de IoC. *(Daniel — completar al implementar)*
+- Particionamiento de `trusted_awid3` por `event_date` (derivada del epoch en UTC) y `Label`, habilitando *partition pruning* en consultas de Athena. La migración conservó los 374.983 registros y una baseline sin optimizar.
+- Orden de escritura por `wlan.bssid` y bloom filters físicos verificados en los 10 archivos Parquet finales, limitados a 4 KiB por filtro tras medir aproximadamente 120 valores distintos de BSSID.
+- Comparativo Athena antes/después en `docs/optimizacion/iceberg/evidencia/`: reducción de lectura del 92,74% por fecha/etiqueta y del 46,63% por BSSID. Las medianas del tiempo del motor fueron 1.040 → 673 ms y 771 → 1.474 ms, respectivamente; la consulta BSSID no mostró una mejora de latencia.
 
 **Gobernanza y calidad**
 - `DATA_GOVERNANCE.md`: diccionario de datos, catálogo de datos, linaje, matriz RACI y reglas de calidad consolidados en un solo documento.
@@ -39,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(Pendiente de esta entrega)* La dirección de broadcast (`ff:ff:ff:ff:ff:ff`) deja de seudonimizarse en `pseudonymize_mac_logic`, preservando la señal de tráfico difundido vs. dirigido. *(Luis — completar al corregir)*
 
 ### Changed
-- `README.md`: sección "Estado del proyecto" actualizada a Sprint 2 (ver `README-seccion-sprint2.md`).
+- `README.md`: estado del Sprint 2, evidencias, diagrama y entregables de Daniel actualizados; las integraciones de Luis, el benchmark de César y los controles de Sebastián permanecen identificados como tareas del equipo.
 
 ## [1.0.0] - 2026-08-31
 ### Added
