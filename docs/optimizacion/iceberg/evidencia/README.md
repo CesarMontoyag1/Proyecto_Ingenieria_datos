@@ -13,5 +13,7 @@ sus estadísticas en la presentación; volver a ejecutar el SQL original sobre l
 tabla ya optimizada produce una nueva medición y no reproduce el estado anterior.
 Los tiempos fluctúan: comparar medianas y mostrar también los bytes leídos.
 
-La evidencia de despliegue y de las migraciones RDS está en
-`docs/entrega_daniel_aws.json` desde la raíz del repositorio.
+Las capturas del despliegue y de las migraciones RDS están en
+[docs/evidencias_capturas/rds/](../../../evidencias_capturas/rds/).
+Las capturas de [Glue](../../../evidencias_capturas/iceberg/) y
+[Athena](../../../evidencias_capturas/athena/) complementan los resultados del experimento.

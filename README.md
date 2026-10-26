@@ -24,7 +24,7 @@ Construido y funcional:
 - Ruta de ingesta batch: Glue Job que valida (calibrado por tipo de trama 802.11), seudonimiza y separa los datos entre Trusted y Quarantine.
 - Ruta de ingesta en streaming: `flink-app` sobre Amazon EMR, que valida, seudonimiza y evalúa reglas de detección en tiempo real (Deauth Flood, Rogue AP, Disas Burst) con alertas publicadas a SQS/SNS vía `alert_formatter`.
 - Job de mantenimiento de Iceberg (compactación de archivos y expiración de snapshots).
-- Capa transaccional en RDS PostgreSQL: catálogo de reglas, alertas, casos de incidente y bitácora de auditoría, con RBAC de 2 perfiles (`security_analyst`, `auditor`).
+- Infraestructura transaccional en RDS PostgreSQL privado y cifrado: tres migraciones aplicadas para el catálogo de reglas, alertas, casos de incidente y bitácora de auditoría, con RBAC de 2 perfiles (`security_analyst`, `auditor`). La integración del consumidor y el llenado de la bitácora siguen pendientes del equipo.
 - **Optimización analítica implementada:** particiones por fecha/etiqueta, orden por BSSID y bloom filters sobre `trusted_awid3`, con [comparativo reproducible en Athena](docs/optimizacion/iceberg/evidencia/resultados.md). En RDS están aplicados los índices BRIN/GIN/parcial/compuesto; el comparativo de César requiere que Luis genere alertas.
 - Gobernanza consolidada en `DATA_GOVERNANCE.md` (diccionario de datos, catálogo, linaje, matriz RACI, reglas de calidad).
 - Módulos de validación, seudonimización y detección probados con pruebas unitarias (pytest).
@@ -37,15 +37,37 @@ Pendiente para el Sprint Final (fuera de alcance de Sprint 2 por definición de 
 ### Diagrama de arquitectura (Actual):
 ![Arquitectura actual de NexaSecure](docs/nexasecure_wids_-_arquitectura_streaming_&_batch.png)
 
-La imagen se genera con `docs/architecture.py` (PNG y SVG). Distingue el
-consumidor Python actual sobre EMR de la futura ejecución PyFlink, y los JSON
-de streaming de la tabla Iceberg batch.
+La versión final del diagrama se mantiene en draw.io y está exportada en
+[PNG](docs/nexasecure_wids_-_arquitectura_streaming_&_batch.png) y
+[PDF](docs/nexasecure_wids_-_arquitectura_streaming_&_batch.pdf).
+`docs/architecture.py` conserva la generación de la versión anterior con Diagrams;
+ejecutarlo vuelve a generar el PNG en la misma ruta. Para actualizar el diagrama
+final, editarlo en draw.io y exportar nuevamente el PNG y el PDF.
 
 ### Entregables de Daniel: RDS y optimización Iceberg
 
 - [RDS: despliegue, migraciones y parámetros para la integración](infrastructure/serverless/rds/README.md).
 - [Iceberg: migración de Trusted y benchmark reproducible en Athena](docs/optimizacion/iceberg/procedimiento.md).
 - [Evidencias del comparativo](docs/optimizacion/iceberg/evidencia/).
+- [Capturas manuales de RDS, Glue y Athena](docs/evidencias_capturas/).
+
+Los entregables de Daniel están implementados: despliegue de RDS y aplicación de
+las tres migraciones, optimización de Trusted, comparativo en Athena y actualización
+del diagrama. La migración de Trusted conservó sus 374.983 registros; se verificaron
+bloom filters físicos de BSSID en los 10 archivos finales, con un límite de 4 KiB.
+
+| Consulta Athena | Mediana antes | Mediana después | Reducción de bytes leídos |
+|---|---:|---:|---:|
+| Fecha y etiqueta | 1.040 ms | 673 ms | 92,74% |
+| BSSID | 771 ms | 1.474 ms | 46,63% |
+
+La consulta BSSID leyó menos datos, pero su tiempo mediano aumentó en esta muestra.
+Las consultas, resultados e identificadores de ejecución están guardados en las
+evidencias del comparativo.
+
+La integración del consumidor con RDS y la generación de alertas corresponden a
+Luis; el benchmark de índices de RDS corresponde a César, una vez existan datos.
+Los perfiles IAM de personas y la auditoría de consultas corresponden a Sebastián.
 
 Los comandos de `scripts/` usan las credenciales locales de `.envs/aws.env`
 en `us-east-1`; la infraestructura está preparada para una cuenta AWS normal.

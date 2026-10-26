@@ -4,6 +4,32 @@ Todos los cambios notables de este proyecto serán documentados en este archivo.
 
 El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/), y este proyecto adhiere a [Versionado Semántico](https://semver.org/lang/es/spec/v2.0.0.html).
 
+## [Unreleased]
+### Added
+- Stack `infrastructure/serverless/rds/`: PostgreSQL privado y cifrado, credenciales administradas, acceso de red limitado a EMR y referencias SSM.
+- Ejecutor temporal SSM sin puertos de entrada para aplicar las migraciones por la red privada; elimina sus recursos al terminar.
+- Scripts de despliegue y migraciones RDS con TLS, bloqueo, checksum y registro de migraciones aplicadas.
+- `TrustedOptimizationJob`: baseline sin optimizar, particiones por fecha/Label, orden por BSSID, bloom filters Parquet y validación completa de filas antes/después.
+- Benchmark Athena reproducible con reutilización desactivada y evidencia de consultas, snapshots, tiempos y bytes escaneados.
+- Capturas manuales de RDS, migraciones, Glue y Athena en `docs/evidencias_capturas/`.
+### Changed
+- Ingesta batch mantiene el layout optimizado de Trusted y comprueba la migración antes de escribir Raw.
+- Diagrama final mantenido en draw.io y exportado a PNG y PDF; `docs/architecture.py` conserva el generador de la versión anterior.
+- README actualizado con los entregables completados de Daniel, métricas verificadas y responsabilidades pendientes del equipo.
+
+## [2.0.0] - 2026-10-26
+### Added
+**Capa transaccional (AWS RDS PostgreSQL — Componente 2 "BD Avanzadas" del Sprint 0)**
+- `backend/database/rds/migrations/001_schema.sql`: tablas `rule_catalog`, `alerts`, `incident_cases`, `audit_log`. Motor transaccional para alertas, casos de incidente y bitácora de auditoría, consistente con la postura CP definida en el Sprint 0.
+- `backend/database/rds/migrations/002_indexes.sql`: índice BRIN sobre `alerts.detected_at`, GIN sobre `alerts.details`, parcial sobre `incident_cases` (solo casos abiertos) y compuesto sobre `(rule_type, severity)`.
+- `backend/database/rds/migrations/003_readonly_role.sql`: roles `security_analyst` y `auditor` bajo mínimo privilegio.
+- `backend/database/rds/demo_indexes.py`: comparativo reproducible antes/después (EXPLAIN ANALYZE) de la optimización de índices; su ejecución requiere datos en `alerts` y queda a cargo de César.
+- `infrastructure/serverless/rds/`: stack de Serverless Framework desplegado con PostgreSQL privado y cifrado. Las tres migraciones se aplicaron en orden y se verificaron cuatro reglas, cuatro índices de optimización y los privilegios de ambos perfiles PostgreSQL.
+
+**Optimización de la capa analítica (Apache Iceberg)**
+- Particionamiento de `trusted_awid3` por `event_date` (derivada del epoch en UTC) y `Label`, habilitando *partition pruning* en consultas de Athena. La migración conservó los 374.983 registros y una baseline sin optimizar.
+- Orden de escritura por `wlan.bssid` y bloom filters físicos verificados en los 10 archivos Parquet finales, limitados a 4 KiB por filtro tras medir aproximadamente 120 valores distintos de BSSID.
+- Comparativo Athena antes/después en `docs/optimizacion/iceberg/evidencia/`: reducción de lectura del 92,74% por fecha/etiqueta y del 46,63% por BSSID. Las medianas del tiempo del motor fueron 1.040 → 673 ms y 771 → 1.474 ms, respectivamente; la consulta BSSID no mostró una mejora de latencia.
 ## [No publicado]
 ### Añadido
 - Documentación consolidada de despliegue y pruebas de punta a punta (*end-to-end*) en `README.md`, incluyendo la preparación del entorno, el orden de los *stacks*, la carga por lotes (*batch*), la ejecución del trabajo de Glue y la simulación de *streaming*.
@@ -55,6 +81,8 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 - `DATA_GOVERNANCE.md`: matriz RACI actualizada para separar la responsabilidad de la aprobación; ningún rol ejecuta y aprueba la misma actividad.
 - Los nombres y parámetros de la infraestructura se documentan por entorno (*stage*), región y `GIT_USER_NAME`, incluyendo la corrección del identificador de la base de datos de Glue para Spark/Iceberg.
 
+### Changed
+- `README.md`: estado del Sprint 2, evidencias, diagrama y entregables de Daniel actualizados; las integraciones de Luis, el benchmark de César y los controles de Sebastián permanecen identificados como tareas del equipo.
 ### Limitaciones conocidas
 - La dirección de difusión (*broadcast*) `ff:ff:ff:ff:ff:ff` todavía se seudonimiza en el código actual; cambiar este comportamiento requiere actualizar la lógica y sus pruebas correspondientes.
 - La capa de aplicación que escribe en `audit_log` antes de realizar consultas sensibles aún no está implementada en este repositorio.
