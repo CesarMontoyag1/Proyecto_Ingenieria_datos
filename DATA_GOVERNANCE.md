@@ -6,6 +6,7 @@ Este documento mapea cada dato, tabla y responsabilidad del pipeline descrito en
 - [Catálogo de datos](#catálogo-de-datos)
 - [Linaje](#linaje)
 - [Matriz RACI](#matriz-raci)
+- [Control de acceso (RBAC)](#control-de-acceso-rbac)
 - [Reglas de calidad ya implementadas](#reglas-de-calidad-ya-implementadas)
 
 ## Diccionario de datos
@@ -31,6 +32,13 @@ Copia inmutable del CSV fuente, sin ningún filtro ni transformación. Las 254 c
 
 Igual esquema que Raw, excepto que `wlan.bssid`, `wlan.sa`, `wlan.da`, `wlan.ra`, `wlan.ta` están seudonimizadas con HMAC-SHA256 (ver [Reglas de calidad](#reglas-de-calidad-ya-implementadas)). Confidencial: identificadores ya seudonimizados, consultable por el equipo de desarrollo y por Athena/Redshift para análisis.
 
+La optimización de Daniel agrega `event_date` (`DATE`), derivada de
+`frame.time_epoch` en UTC: Trusted tiene las 254 columnas originales más esta
+columna técnica. Se particiona por `event_date` y `Label`, y se ordena por
+`wlan.bssid`. La tabla `trusted_awid3_baseline` conserva una copia seudonimizada
+sin optimizar para validar la migración y el benchmark; tiene el mismo nivel de
+acceso que Trusted. El NDJSON de streaming mantiene su formato anterior.
+
 ### Zona Quarantine (S3, Parquet `quarantine_awid3`)
 
 Registros que no pasaron la validación, con la columna adicional `rejection_reason` para auditar por qué. Mismo nivel de sensibilidad que Raw (no seudonimizado) — acceso igualmente restringido.
@@ -42,7 +50,7 @@ Registros que no pasaron la validación, con la columna adicional `rejection_rea
 | `rule_catalog` | `rule_type`, `default_severity`, `default_threshold`, `default_window_seconds` | Catálogo de las reglas de detección (Deauth Flood, Rogue AP, Disas Burst) |
 | `alerts` | `rule_type` (FK), `severity`, `bssid_pseudo`, `src_mac_pseudo`, `detected_at`, `details` (JSONB) | Append-only. `bssid_pseudo`/`src_mac_pseudo` llegan ya seudonimizados desde `flink-app` — RDS nunca recibe una MAC en texto plano |
 | `incident_cases` | `alert_id` (FK), `status`, `assigned_to`, `resolution_notes` | Casos abiertos por el analista SOC a partir de una alerta |
-| `audit_log` | `actor`, `action`, `target_table`, `performed_at` | Bitácora inmutable de consultas sensibles (ver [RBAC](#reglas-de-calidad-ya-implementadas)) |
+| `audit_log` | `actor`, `action`, `target_table`, `performed_at` | Bitácora de consultas sensibles. Su inmutabilidad todavía no está aplicada: falta el `REVOKE` y el rol que escribe (ver [RBAC](#control-de-acceso-rbac)) |
 
 Ninguna tabla de RDS contiene una dirección MAC en texto plano ni ningún otro campo PII del dataset original.
 
@@ -90,6 +98,29 @@ Roles tomados de la matriz de stakeholders del Sprint 0 (sección 2.3):
 | Auditar la bitácora de consultas sensibles | | I | R, A | I |
 
 R: Responsable. A: Aprueba/dueño. C: Consultado. I: Informado.
+
+## Control de acceso (RBAC)
+
+La rúbrica del Sprint 0 (sección 3.2, Componente 3) pide cuatro perfiles con mínimo privilegio. Dos se implementan como roles de PostgreSQL sobre RDS y los otros dos como roles de IAM sobre el resto de la arquitectura.
+
+| Perfil | Mecanismo | Puede | No puede |
+| --- | --- | --- | --- |
+| Analista de seguridad (`security_analyst`) | Rol PostgreSQL, `backend/database/rds/migrations/003_readonly_role.sql` | Leer `alerts` y `rule_catalog`; leer, crear y cambiar el estado de `incident_cases` | Leer `audit_log`; modificar reglas; escribir en `alerts` |
+| Auditor (`auditor`) | Rol PostgreSQL, `003_readonly_role.sql` | Leer todas las tablas, incluida `audit_log` | Escribir en cualquier tabla |
+| Administrador de plataforma | Rol IAM (pendiente de desplegar) | Desplegar y actualizar los stacks Serverless de `storage`, `streaming`, `glue`, `emr`, `queue`, `notifications`, `secrets` y RDS; administrar los parámetros SSM `/nexasecure/{stage}/*`; leer logs de CloudWatch | Leer el valor de `/nexasecure/{stage}/PiiHmacKey`; leer objetos de las zonas S3; usar las credenciales maestras de RDS |
+| Ingeniero de datos | Rol IAM (pendiente de desplegar) | Ejecutar y monitorear los jobs y crawlers de Glue; leer `trusted_awid3` (seudonimizada) y consultar el Glue Data Catalog; enviar eventos al stream `nexasecure-wids-awid3-events-{stage}-{dev}`; consultar el estado del cluster EMR | Leer `raw_awid3` ni `quarantine_awid3` (texto plano); leer el valor de la llave HMAC; borrar objetos de Raw |
+
+Notas:
+
+- Las credenciales maestras de RDS quedan fuera de estos perfiles. Solo se usan para aplicar las migraciones y se guardan en Secrets Manager.
+- Los roles de Glue, EMR y Firehose que ya existen en `infrastructure/serverless/` son roles de servicio, no de personas. No se cuentan como perfiles de este RBAC.
+- Pendiente de decisión: si el ingeniero de datos necesita leer `quarantine_awid3` para el perfilamiento. Por ahora se propone que no; el perfilamiento se hace con consultas agregadas.
+
+Pendientes de RBAC:
+
+- **`audit_log` no tiene escritor.** Ni `security_analyst` ni `auditor` tienen `INSERT` sobre `audit_log`, y la aplicación debe insertar ahí antes de cada consulta sensible. Propuesta: un rol que solo pueda `INSERT` y `SELECT` sobre `audit_log`, y `REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM PUBLIC`, que es lo que haría real la inmutabilidad.
+- **La capa de aplicación no existe en el repositorio.** No hay código que abra conexiones con `security_analyst` o `auditor` ni que escriba en `audit_log`, así que todavía no se puede verificar que la bitácora se llene en cada consulta.
+- **Los roles IAM no están desplegados.** Falta el stack `infrastructure/serverless/iam/`.
 
 ## Reglas de calidad ya implementadas
 

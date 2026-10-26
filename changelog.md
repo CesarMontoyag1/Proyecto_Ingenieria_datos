@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Added
+- Stack `infrastructure/serverless/rds/`: PostgreSQL privado y cifrado, credenciales administradas, acceso de red limitado a EMR y referencias SSM.
+- Ejecutor temporal SSM sin puertos de entrada para aplicar las migraciones por la red privada; elimina sus recursos al terminar.
+- Scripts de despliegue y migraciones RDS con TLS, bloqueo, checksum y registro de migraciones aplicadas.
+- `TrustedOptimizationJob`: baseline sin optimizar, particiones por fecha/Label, orden por BSSID, bloom filters Parquet y validación completa de filas antes/después.
+- Benchmark Athena reproducible con reutilización desactivada y evidencia de consultas, snapshots, tiempos y bytes escaneados.
+### Changed
+- Ingesta batch mantiene el layout optimizado de Trusted y comprueba la migración antes de escribir Raw.
+- Diagrama actualizado en Python, PNG y SVG con RDS, notificaciones y distinción entre Iceberg batch y JSON streaming.
+
 ## [2.0.0] - 2026-10-26
 ### Added
 **Capa transaccional (AWS RDS PostgreSQL — Componente 2 "BD Avanzadas" del Sprint 0)**

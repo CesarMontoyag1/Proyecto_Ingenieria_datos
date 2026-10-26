@@ -1,0 +1,145 @@
+{
+  "phase": "before",
+  "stage": "dev",
+  "database": "nexasecure_wids_catalog_dev_local",
+  "captured_at_utc": "2026-10-25T00:32:31.267038+00:00",
+  "selection": {
+    "date": "2020-12-18",
+    "label": "Normal",
+    "bssid": "0c:9d:92:ad2596f1"
+  },
+  "metadata": {
+    "metadata_location": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted//metadata/00000-597d6e1d-c856-4f25-bdae-4be15f811a04.metadata.json",
+    "snapshot_id": 3821071324203401255,
+    "total_records": "374983",
+    "partition_specs": [
+      {
+        "spec-id": 0,
+        "fields": []
+      }
+    ],
+    "sort_orders": [
+      {
+        "order-id": 0,
+        "fields": []
+      }
+    ],
+    "properties": {
+      "owner": "spark"
+    }
+  },
+  "queries": {
+    "date_label": [
+      {
+        "query_id": "3e1464bd-0c84-4032-b993-b2a7adddf6f9",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE CAST(from_unixtime(TRY_CAST(\"frame.time_epoch\" AS double)) AS date) = DATE '2020-12-18' AND \"Label\" = 'Normal'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "149992",
+            "2.7995794E7"
+          ]
+        ],
+        "engine_ms": 1040,
+        "total_ms": 1214,
+        "bytes_scanned": 748348,
+        "reused": false
+      },
+      {
+        "query_id": "029c62c2-d86e-4313-a2dd-4a888714d630",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE CAST(from_unixtime(TRY_CAST(\"frame.time_epoch\" AS double)) AS date) = DATE '2020-12-18' AND \"Label\" = 'Normal'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "149992",
+            "2.7995794E7"
+          ]
+        ],
+        "engine_ms": 1026,
+        "total_ms": 1211,
+        "bytes_scanned": 748348,
+        "reused": false
+      },
+      {
+        "query_id": "bda3a08d-2735-4f1b-8531-9b218c383fd9",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE CAST(from_unixtime(TRY_CAST(\"frame.time_epoch\" AS double)) AS date) = DATE '2020-12-18' AND \"Label\" = 'Normal'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "149992",
+            "2.7995794E7"
+          ]
+        ],
+        "engine_ms": 2004,
+        "total_ms": 2212,
+        "bytes_scanned": 748348,
+        "reused": false
+      }
+    ],
+    "bssid": [
+      {
+        "query_id": "fee8871d-3c05-4e1a-a356-e92ab4bbdbf8",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE \"wlan.bssid\" = '0c:9d:92:ad2596f1'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "102847",
+            "5.810921E7"
+          ]
+        ],
+        "engine_ms": 778,
+        "total_ms": 973,
+        "bytes_scanned": 238436,
+        "reused": false
+      },
+      {
+        "query_id": "092197c5-adf3-4554-80de-e3688241c889",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE \"wlan.bssid\" = '0c:9d:92:ad2596f1'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "102847",
+            "5.810921E7"
+          ]
+        ],
+        "engine_ms": 771,
+        "total_ms": 905,
+        "bytes_scanned": 238436,
+        "reused": false
+      },
+      {
+        "query_id": "4f80b3c7-ea4b-4805-b95a-ca24f1d8b6b7",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE \"wlan.bssid\" = '0c:9d:92:ad2596f1'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "102847",
+            "5.810921E7"
+          ]
+        ],
+        "engine_ms": 710,
+        "total_ms": 886,
+        "bytes_scanned": 238436,
+        "reused": false
+      }
+    ]
+  }
+}

@@ -1,13 +1,26 @@
 import hmac
 import hashlib
-from pyspark.sql.functions import udf
-from pyspark.sql.types import StringType
+
+try:
+    from pyspark.sql.functions import udf
+    from pyspark.sql.types import StringType
+except ImportError:
+    udf = None
+    StringType = None
+
+BROADCAST_MAC = "ff:ff:ff:ff:ff:ff"
 
 def pseudonymize_mac_logic(mac: str, hmac_key: bytes) -> str:
     """
     Applies HMAC-SHA256 to a MAC address while preserving the first 3 octets (OUI prefix).
     """
-    if not mac or len(mac) < 8:
+    if not mac:
+        return mac
+
+    if mac.lower() == BROADCAST_MAC:
+        return mac
+
+    if len(mac) < 8:
         return mac
 
     parts = mac.split(':')
@@ -27,6 +40,9 @@ def get_pseudonymize_udf(hmac_key_str: str):
     """
     Returns a PySpark UDF with the HMAC key bound via closure.
     """
+    if udf is None:
+        raise RuntimeError("PySpark no está disponible en este entorno.")
     key_bytes = hmac_key_str.encode('utf-8')
     return udf(lambda mac: pseudonymize_mac_logic(mac, key_bytes), StringType())
+
 

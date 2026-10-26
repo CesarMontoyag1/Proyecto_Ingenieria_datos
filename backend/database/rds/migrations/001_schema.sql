@@ -70,6 +70,7 @@ CREATE TABLE audit_log (
 INSERT INTO rule_catalog (rule_type, description, default_severity, default_threshold, default_window_seconds) VALUES
     ('DEAUTH_FLOOD', 'Ráfaga de tramas de deautenticación hacia un mismo BSSID en una ventana corta', 'HIGH', 10, 5),
     ('ROGUE_AP', 'Beacon con SSID conocido emitido desde un BSSID no autorizado', 'CRITICAL', 1, 1),
-    ('DISAS_BURST', 'Ráfaga de tramas de desasociación, posible interrupción de servicio', 'MEDIUM', 10, 5);
+    ('DISAS_BURST', 'Ráfaga de tramas de desasociación, posible interrupción de servicio', 'MEDIUM', 10, 5),
+    ('SSDP_FLOOD', 'Ráfaga masiva de paquetes SSDP/UPnP (DDoS de amplificación / saturación)', 'HIGH', 15, 5);
 
 COMMIT;

@@ -14,6 +14,8 @@ class TestDetectionRules(unittest.TestCase):
             deauth_window_sec=5.0,
             disas_threshold=4,
             disas_window_sec=5.0,
+            ssdp_threshold=5,
+            ssdp_window_sec=5.0,
             alert_cooldown_sec=60.0,
             ssid_whitelist={
                 "NexaSecure-Corp": {"00:11:22:33:44:55"}
@@ -108,7 +110,7 @@ class TestDetectionRules(unittest.TestCase):
 
         alert = alerts[0]
         self.assertEqual(alert["rule_type"], "ROGUE_AP")
-        self.assertEqual(alert["severity"], "HIGH")
+        self.assertEqual(alert["severity"], "CRITICAL")
         self.assertEqual(alert["bssid"], pseudonymize_mac(rogue_bssid, TEST_KEY))
         self.assertIn("Rogue AP", alert["details"]["reason"])
 
@@ -131,6 +133,31 @@ class TestDetectionRules(unittest.TestCase):
         self.assertEqual(len(alerts), 1)
         self.assertEqual(alerts[0]["rule_type"], "DISAS_BURST")
         self.assertEqual(alerts[0]["severity"], "MEDIUM")
+
+    def test_ssdp_flood_detection(self):
+        base_time = 5000.0
+        target_bssid = "00:14:6c:88:99:00"
+        attacker_ip = "192.168.1.105"
+
+        record = {
+            "ssdp": "1",
+            "udp.dstport": "1900",
+            "wlan.bssid": target_bssid,
+            "ip.src": attacker_ip,
+            "Label": "SSDP"
+        }
+
+        alerts = []
+        for i in range(5):
+            alerts.extend(self.engine.process_event({**record, "frame.time_epoch": base_time + (i * 0.5)}))
+
+        self.assertEqual(len(alerts), 1)
+        alert = alerts[0]
+        self.assertEqual(alert["rule_type"], "SSDP_FLOOD")
+        self.assertEqual(alert["severity"], "HIGH")
+        self.assertEqual(alert["observed_count"], 5)
+        self.assertEqual(alert["bssid"], pseudonymize_mac(target_bssid, TEST_KEY))
+        self.assertIn("SSDP", alert["details"]["protocol"])
 
 
 if __name__ == "__main__":

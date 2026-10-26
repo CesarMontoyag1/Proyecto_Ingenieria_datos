@@ -7,6 +7,6 @@ provider:
   stackName: nexasecure-notifications-${self:provider.stage}
 
 resources:
-  - ${file(sns.yml)}
+  - ${file(sns.js)}
   - ${file(parameters.yml)}
 

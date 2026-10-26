@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
 set -xe
 
-echo "=== NexaSecure EMR Bootstrap: Instalando dependencias PyFlink ==="
+echo "=== NexaSecure EMR Bootstrap: Instalando dependencias Python ==="
 
-# Actualizar pip e instalar dependencias Python para Flink
+# Actualizar pip e instalar dependencias requeridas para el job
 sudo python3 -m pip install --upgrade pip
-sudo python3 -m pip install apache-flink==1.18.0 boto3 pandas
+sudo python3 -m pip install boto3 pandas psycopg2-binary || sudo python3 -m pip install boto3 pandas
 
-# Descargar JARs para conectores de Kinesis y Apache Iceberg
-JARS_DIR="/usr/lib/flink/lib"
-sudo mkdir -p ${JARS_DIR}
+# Intentar instalar apache-flink si está disponible en la versión de Python del sistema
+sudo python3 -m pip install "apache-flink>=1.18.0" || echo "PyFlink wheel no requerido directamente para el consumidor streaming"
 
 echo "=== Bootstrap completado exitosamente ==="
 
