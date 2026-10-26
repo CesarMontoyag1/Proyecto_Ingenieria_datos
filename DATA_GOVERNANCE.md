@@ -70,7 +70,7 @@ Credenciales también forman parte del catálogo porque definen quién puede lee
 1. El dataset AWID3-CSV llega por dos rutas: batch (`kaggle_batch_loader.py` sube el CSV a `landing/batch/`) y streaming (`kaggle_stream_simulator.py` inyecta eventos a Kinesis Data Stream).
 2. Ruta batch: `glue-jobs/src/batch_ingest_job.py` escribe una copia sin filtrar en `raw_awid3`, valida cada fila con `_validate_record_logic` (calibrada por tipo de trama 802.11), seudonimiza las MAC válidas con HMAC-SHA256 y escribe en `trusted_awid3`; las filas rechazadas van a `quarantine_awid3` con su `rejection_reason`.
 3. Ruta streaming: Kinesis Firehose persiste el evento crudo en `raw/streaming/` sin transformar. `flink-app/src/detection_job.py` consume el stream, valida, seudonimiza (mismo algoritmo HMAC-SHA256, misma llave en Secrets Manager que el job batch) y escribe en `trusted_awid3`, evaluando en paralelo las reglas de `detection_rules.py`.
-4. Si una regla dispara, `detection_job.py` inserta una fila en `alerts` (RDS) y publica a la cola SQS de alertas; `backend/src/alert_formatter/handler.py` la formatea y notifica (SNS/Slack).
+4. Si una regla dispara, `detection_job.py` inserta una fila en `alerts` (RDS) y publica a la cola SQS de alertas; `backend/serverless/alerts/handler.py` la formatea y notifica (SNS/Slack) mediante la Lambda `alertFormatter`.
 5. El analista SOC abre un `incident_cases` a partir de una alerta, y cada consulta que hace sobre `alerts`/`incident_cases` con el rol `security_analyst` queda escrita en `audit_log`.
 6. Las consultas analíticas (Athena/Redshift, Sprint Final) leen exclusivamente de `trusted_awid3`, nunca de Raw ni Quarantine.
 
@@ -87,17 +87,19 @@ Roles tomados de la matriz de stakeholders del Sprint 0 (sección 2.3):
 
 | Actividad | CISO | Arquitecto Cloud | Oficial Cumplimiento/DPO | Analista SOC |
 | --- | --- | --- | --- | --- |
-| Diseñar y mantener las reglas de validación de calidad | I | R, A | C | I |
-| Seudonimizar y proteger las MAC (PII) | I | R | A | |
-| Decidir qué campos se excluyen o enmascaran por PII | | R | A | |
-| Diseñar y operar el pipeline (Glue, Flink, RDS) | I | R, A | | I |
-| Aprobar el acceso de solo lectura de los roles `security_analyst`/`auditor` | | R | A | I |
-| Consultar alertas y gestionar casos de incidente | | | | R, A |
-| Responder a un incidente de seguridad o filtración de datos | C | R | A | R |
-| Revisar y aprobar cambios al esquema de datos | C | R | A | I |
-| Auditar la bitácora de consultas sensibles | | I | R, A | I |
+| Diseñar y mantener las reglas de validación de calidad | I | R | A | C |
+| Definir los criterios de aceptación de calidad | I | C | A | R |
+| Seudonimizar y proteger las MAC (PII) | I | R | A | C |
+| Decidir qué campos se excluyen o enmascaran por PII | C | R | A | C |
+| Diseñar y operar el pipeline (Glue, Flink, RDS) | I | R | A | C |
+| Aprobar el acceso de solo lectura de los roles `security_analyst`/`auditor` | C | R | A | I |
+| Consultar alertas y gestionar casos de incidente | A | I | C | R |
+| Responder a un incidente de seguridad o filtración de datos | A | R | C | R |
+| Proponer cambios al esquema de datos | I | R | C | C |
+| Aprobar cambios al esquema de datos | A | C | R | C |
+| Auditar la bitácora de consultas sensibles | A | I | R | C |
 
-R: Responsable. A: Aprueba/dueño. C: Consultado. I: Informado.
+R: Responsable de ejecutar o coordinar. A: Aprueba y asume la decisión final. C: Consultado antes de ejecutar. I: Informado. Para conservar independencia, ninguna actividad asigna `R` y `A` al mismo rol; la aprobación corresponde a un rol distinto del que ejecuta el trabajo.
 
 ## Control de acceso (RBAC)
 
