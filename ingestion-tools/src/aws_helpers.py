@@ -12,4 +12,7 @@ def get_raw_bucket_name(deploy_app: str = "nexasecure", stage: str = "dev") -> s
 
 
 def get_stream_name(deploy_app: str = "nexasecure", stage: str = "dev") -> str:
-    return get_ssm_parameter(f"/{deploy_app}/{stage}/streaming/Awid3StreamName")
+    try:
+        return get_ssm_parameter(f"/{deploy_app}/{stage}/streaming/Awid3StreamName")
+    except Exception:
+        return get_ssm_parameter(f"/{deploy_app}/{stage}/stream/Awid3StreamName")

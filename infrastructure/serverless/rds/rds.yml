@@ -1,0 +1,50 @@
+Resources:
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: nexasecure-postgres-${self:provider.stage}
+      DBName: nexasecure
+      Engine: postgres
+      EngineVersion: ${self:custom.deployment.engineVersion}
+      DBInstanceClass: db.t4g.micro
+      AllocatedStorage: 20
+      StorageType: gp3
+      StorageEncrypted: true
+      MasterUsername: nexasecure_admin
+      ManageMasterUserPassword: true
+      Port: 5432
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      VPCSecurityGroups:
+        - !GetAtt DatabaseSecurityGroup.GroupId
+      PubliclyAccessible: false
+      MultiAZ: false
+      BackupRetentionPeriod: 1
+      AutoMinorVersionUpgrade: true
+      CopyTagsToSnapshot: true
+      Tags:
+        - Key: Project
+          Value: NexaSecure
+        - Key: Stage
+          Value: ${self:provider.stage}
+
+  AnalystCredentials:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/rds/SecurityAnalystCredentials
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"security_analyst"}'
+        GenerateStringKey: password
+        PasswordLength: 40
+        ExcludePunctuation: true
+
+  AuditorCredentials:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/rds/AuditorCredentials
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"auditor"}'
+        GenerateStringKey: password
+        PasswordLength: 40
+        ExcludePunctuation: true

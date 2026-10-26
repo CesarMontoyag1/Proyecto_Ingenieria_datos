@@ -1,0 +1,9 @@
+{
+  "name": "nexasecure-emr-stack",
+  "version": "1.0.0",
+  "description": "AWS EMR stack for NexaSecure WIDS",
+  "devDependencies": {
+    "serverless-s3-sync": "^3.3.0"
+  }
+}
+

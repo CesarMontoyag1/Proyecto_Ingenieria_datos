@@ -1,0 +1,31 @@
+Resources:
+  EndpointParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/rds/Endpoint
+      Type: String
+      Value: !GetAtt Database.Endpoint.Address
+  PortParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/rds/Port
+      Type: String
+      Value: !GetAtt Database.Endpoint.Port
+  DatabaseNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/rds/DatabaseName
+      Type: String
+      Value: nexasecure
+  MasterSecretParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/rds/MasterSecretArn
+      Type: String
+      Value: !GetAtt Database.MasterUserSecret.SecretArn
+  SecurityGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/rds/SecurityGroupId
+      Type: String
+      Value: !GetAtt DatabaseSecurityGroup.GroupId

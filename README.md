@@ -17,18 +17,63 @@ Este es un proyecto académico desarrollado por estudiantes de Ingeniería de Si
  
 ---
  
-## Estado del proyecto (Sprint 1)
- 
+## Estado del proyecto (Sprint 2 — Producto Beta)
+
 Construido y funcional:
-- Infraestructura base en AWS (buckets S3, Secrets Manager, Glue Data Catalog).
-- Ruta de ingesta en streaming: simulador en Python -> Kinesis Data Stream -> Kinesis Firehose -> S3 Raw.
-- Ruta de ingesta batch: Glue Job que valida, seudonimiza y separa los datos entre Trusted y Quarantine.
+- Infraestructura base en AWS (buckets S3, Secrets Manager, Glue Data Catalog, Kinesis + Firehose).
+- Ruta de ingesta batch: Glue Job que valida (calibrado por tipo de trama 802.11), seudonimiza y separa los datos entre Trusted y Quarantine.
+- Ruta de ingesta en streaming: `flink-app` sobre Amazon EMR, que valida, seudonimiza y evalúa reglas de detección en tiempo real (Deauth Flood, Rogue AP, Disas Burst) con alertas publicadas a SQS/SNS vía `alert_formatter`.
 - Job de mantenimiento de Iceberg (compactación de archivos y expiración de snapshots).
-- Módulos de validación y seudonimización reutilizados y probados con pruebas unitarias (pytest).
----
+- Infraestructura transaccional en RDS PostgreSQL privado y cifrado: tres migraciones aplicadas para el catálogo de reglas, alertas, casos de incidente y bitácora de auditoría, con RBAC de 2 perfiles (`security_analyst`, `auditor`). La integración del consumidor y el llenado de la bitácora siguen pendientes del equipo.
+- **Optimización analítica implementada:** particiones por fecha/etiqueta, orden por BSSID y bloom filters sobre `trusted_awid3`, con [comparativo reproducible en Athena](docs/optimizacion/iceberg/evidencia/resultados.md). En RDS están aplicados los índices BRIN/GIN/parcial/compuesto; el comparativo de César requiere que Luis genere alertas.
+- Gobernanza consolidada en `DATA_GOVERNANCE.md` (diccionario de datos, catálogo, linaje, matriz RACI, reglas de calidad).
+- Módulos de validación, seudonimización y detección probados con pruebas unitarias (pytest).
+
+Pendiente para el Sprint Final (fuera de alcance de Sprint 2 por definición de la rúbrica):
+- Capa de consumo: Amazon Athena / Redshift Spectrum y el dashboard operativo (QuickSight o Power BI).
+- DataOps: CI/CD, observabilidad y monitoreo de los pipelines en producción.
+
 
 ### Diagrama de arquitectura (Actual):
-<img width="2224" height="2011" alt="diagrama_datos" src="https://github.com/user-attachments/assets/56e81bce-b3d5-45ef-bf0b-3ba48591752c" />
+![Arquitectura actual de NexaSecure](docs/nexasecure_wids_-_arquitectura_streaming_&_batch.png)
+
+La versión final del diagrama se mantiene en draw.io y está exportada en
+[PNG](docs/nexasecure_wids_-_arquitectura_streaming_&_batch.png) y
+[PDF](docs/nexasecure_wids_-_arquitectura_streaming_&_batch.pdf).
+`docs/architecture.py` conserva la generación de la versión anterior con Diagrams;
+ejecutarlo vuelve a generar el PNG en la misma ruta. Para actualizar el diagrama
+final, editarlo en draw.io y exportar nuevamente el PNG y el PDF.
+
+### Entregables de Daniel: RDS y optimización Iceberg
+
+- [RDS: despliegue, migraciones y parámetros para la integración](infrastructure/serverless/rds/README.md).
+- [Iceberg: migración de Trusted y benchmark reproducible en Athena](docs/optimizacion/iceberg/procedimiento.md).
+- [Evidencias del comparativo](docs/optimizacion/iceberg/evidencia/).
+- [Capturas manuales de RDS, Glue y Athena](docs/evidencias_capturas/).
+
+Los entregables de Daniel están implementados: despliegue de RDS y aplicación de
+las tres migraciones, optimización de Trusted, comparativo en Athena y actualización
+del diagrama. La migración de Trusted conservó sus 374.983 registros; se verificaron
+bloom filters físicos de BSSID en los 10 archivos finales, con un límite de 4 KiB.
+
+| Consulta Athena | Mediana antes | Mediana después | Reducción de bytes leídos |
+|---|---:|---:|---:|
+| Fecha y etiqueta | 1.040 ms | 673 ms | 92,74% |
+| BSSID | 771 ms | 1.474 ms | 46,63% |
+
+La consulta BSSID leyó menos datos, pero su tiempo mediano aumentó en esta muestra.
+Las consultas, resultados e identificadores de ejecución están guardados en las
+evidencias del comparativo.
+
+La integración del consumidor con RDS y la generación de alertas corresponden a
+Luis; el benchmark de índices de RDS corresponde a César, una vez existan datos.
+Los perfiles IAM de personas y la auditoría de consultas corresponden a Sebastián.
+
+Los comandos de `scripts/` usan las credenciales locales de `.envs/aws.env`
+en `us-east-1`; la infraestructura está preparada para una cuenta AWS normal.
+Antes de ejecutar la nueva ingesta batch sobre una Trusted existente, completar
+`TrustedOptimizationJob`. No reiniciar bookmarks ni volver a cargar Raw para
+aplicar el cambio de particiones.
 
 ---
 
@@ -42,7 +87,8 @@ Contiene los stacks de Serverless Framework para desplegar la infraestructura en
 * **`storage/`**: Crea los buckets de S3 para las capas del Lakehouse (`Raw`, `Trusted`, `Quarantine`) y publica sus nombres en el Parameter Store (SSM) de AWS.
 * **`streaming/`**: Configura un **Kinesis Data Stream** como bus de entrada para eventos en tiempo real, acoplado con **Kinesis Data Firehose** para guardar automáticamente los eventos `.json` crudos en el bucket Raw (zona `raw/streaming/`).
 * **`glue/`**: Implementa el ecosistema batch y el catálogo de datos. Crea el **Glue Data Catalog**, los **Glue Crawlers** (para detectar esquemas), los **Triggers** y los **Glue Jobs** (Spark) que procesan la información.
-* **`emr/`**: (Placeholder para fases avanzadas) Cluster EMR Serverless para correr aplicaciones de Apache Flink.
+* **`emr/`**: Clúster Amazon EMR sobre EC2 con un consumidor Python/boto3. La ejecución con el motor PyFlink sigue pendiente.
+* **`rds/`**: PostgreSQL privado para el catálogo de reglas, alertas, casos y auditoría; credenciales en Secrets Manager y migraciones mediante un ejecutor SSM temporal.
 
 ### 2. `ingestion-tools/` (Simulador de Datos desde Kaggle)
 Herramientas de desarrollo local en Python (aisladas en su propio contenedor Docker) para inyectar datos reales del dataset AWID3 sin descargar los 46GB completos, ahorrando costos y ancho de banda.
@@ -100,12 +146,46 @@ Una vez creados estos archivos, la estructura local de tu proyecto estará lista
 ### Fase 1: Despliegue de Infraestructura (AWS)
 1. Abre la carpeta `infrastructure` en VS Code (usa el DevContainer para asegurar Node.js y Serverless Framework).
 2. Autentícate en tu cuenta de AWS (`aws configure` o `aws sso login`).
-3. Despliega los stacks en orden estricto (ya que unos dependen de los parámetros de otros):
+3. Instala las dependencias de Node una vez:
    ```bash
-   cd serverless/secrets && serverless deploy
-   cd ../storage && serverless deploy
-   cd ../streaming && serverless deploy
+   cd /app/infrastructure
+   npm install
+   ```
+4. Define el identificador usado por los nombres de buckets. Usa el mismo valor
+   en todos los stacks:
+   ```bash
+   export GIT_USER_NAME=tu_identificador
+   ```
+5. Despliega los stacks en orden estricto, ya que unos dependen de los parámetros de otros:
+   ```bash
+   cd /app/infrastructure/serverless/secrets && serverless deploy --stage dev
+   cd ../storage && serverless deploy --stage dev
+   cd ../queue && serverless deploy --stage dev
+   cd ../notifications && serverless deploy --stage dev
+   cd ../streaming && serverless deploy --stage dev
    cd ../glue && serverless deploy
+   ```
+6. Despliega RDS y aplica sus migraciones:
+   ```bash
+   cd /app
+   python scripts/rds.py prepare --stage dev
+   python scripts/rds.py package --stage dev
+   python scripts/rds.py deploy --stage dev
+   python scripts/rds.py status --stage dev
+   python scripts/rds_migrate_remote.py
+   ```
+7. Despliega EMR:
+   ```bash
+   cd /app/infrastructure/serverless/emr
+   npm install
+   serverless deploy --stage dev
+   ```
+8. Despliega el Lambda de notificaciones, ubicado en `backend/serverless/alerts`:
+   ```bash
+   cd /app/backend
+   npm install
+   cd serverless/alerts
+   serverless deploy --stage dev
    ```
 
 ### Fase 2: Iniciar las Herramientas de Ingesta
@@ -116,25 +196,15 @@ Una vez creados estos archivos, la estructura local de tu proyecto estará lista
    docker exec -it NexaSecureIngestionTools bash
    ```
 
-### Fase 3: Probar el flujo Streaming (Kinesis -> Firehose -> S3)
+### Fase 3: Probar el flujo Batch (Landing -> Glue -> Iceberg)
 Desde dentro del contenedor de `ingestion-tools`:
-1. Envía tráfico en tiempo real consumiendo la porción de **Streaming** (segundo 50% de las categorías seleccionadas):
+
+1. Sube la porción destinada a **Batch** a la zona de aterrizaje:
+
    ```bash
-   # Varias categorías de ataque simultáneas (ej. 30 eventos por cada una):
-   python -m src.kaggle_stream_simulator --categories "1.Deauth" "2.Disas" "10.SQL_Injection" --limit-per-cat 30 --rate 10
-
-   # O todas las 13 categorías del dataset AWID3:
-   python -m src.kaggle_stream_simulator --all-categories --limit-per-cat 20 --rate 10
-
-   # O un solo archivo específico:
-   python -m src.kaggle_stream_simulator --kaggle-path "CSV/1.Deauth/Deauth_0.csv" --limit 50 --rate 10
-   ```
-2. **Validación:** Espera ~60 segundos (el tiempo de búfer de Firehose). En la consola de AWS (o vía CLI), revisa el bucket Raw. Verás archivos `.json` estructurados por año/mes/día/hora en la ruta `raw/streaming/`.
-
-### Fase 4: Probar el flujo Batch (Landing -> Glue -> Iceberg)
-Desde dentro del contenedor de `ingestion-tools`:
-1. Sube la porción destinada a **Batch** (primer 50% de las categorías seleccionadas) a la zona de aterrizaje:
-   ```bash
+   python -m src.kaggle_batch_loader \
+     --kaggle-path "CSV/11.SSDP/SSDP_31.csv" \
+     --split-mode rows
    # Varias categorías de ataque (sube 1 archivo muestra por cada una):
    python -m src.kaggle_batch_loader --categories "1.Deauth" "2.Disas" "10.SQL_Injection" --limit-files 1
 
@@ -145,41 +215,102 @@ Desde dentro del contenedor de `ingestion-tools`:
    python -m src.kaggle_batch_loader --kaggle-path "CSV/1.Deauth/Deauth_0.csv" --split-mode files
    ```
 
-Desde el contenedor de `infrastructure`:
-2. Si actualizaste el código de los scripts de Spark, despliega el stack de Glue (Serverless sincroniza los scripts a S3 automáticamente):
+2. Desde el contenedor de `infrastructure`, ejecuta el Glue Job:
+
    ```bash
-   cd /app/infrastructure/serverless/glue
-   ./deploy.sh
-   # (o simplemente: serverless deploy)
-   ```
-3. Ejecuta el Job Batch de Glue:
-   ```bash
-   JOB_NAME=$(aws ssm get-parameter --name /nexasecure/dev/glue/BatchIngestJobName --query Parameter.Value --output text)
+   JOB_NAME=$(aws ssm get-parameter \
+     --name /nexasecure/dev/glue/BatchIngestJobName \
+     --query 'Parameter.Value' \
+     --output text)
+
    aws glue start-job-run --job-name $JOB_NAME
+
+   # Si tienes problemas con tu usuario crea:
+
+   SAFE_DATABASE="nexasecure_wids_catalog_dev_${GIT_USER_NAME//-/_}"
+
+   aws glue create-database \
+     --database-input "{\"Name\":\"$SAFE_DATABASE\",\"Description\":\"Catalogo NexaSecure para prueba batch\"}"
+
+   RUN_ID=$(aws glue start-job-run \
+     --job-name "$JOB_NAME" \
+     --arguments "{\"--CATALOG_DATABASE_NAME\":\"$SAFE_DATABASE\"}" \
+     --query 'JobRunId' \
+     --output text)
+
+   echo "Run ID: $RUN_ID"
    ```
-4. **Validación:** El Job de Glue tardará ~4 a 6 minutos. Una vez el estado del Job cambie a `SUCCEEDED`, podrás verificar los resultados de dos formas:
 
-   **A) Verificación Física en Amazon S3:**
-   - Ve a la consola de **Amazon S3**.
-   - En tu bucket Raw (`nexasecure-wids-awid3-raw-dev-local`), entra a la ruta `iceberg-warehouse/glue_catalog/nexasecure_wids_catalog_dev_local/raw_awid3/`. Verás las carpetas `data/` (archivos Parquet inmutables) y `metadata/` (historial de Iceberg).
-   - En tu bucket Trusted (`nexasecure-wids-awid3-trusted-dev-local`), entra a `iceberg-warehouse/glue_catalog/nexasecure_wids_catalog_dev_local/trusted_awid3/`. Verás la misma estructura de Iceberg, pero la data ya está limpia y ofuscada.
-   - En tu bucket Quarantine (`nexasecure-wids-awid3-quarantine-dev-local`), si hubo filas inválidas (ej. payload gigante), las verás en `quarantine/batch/` en formato Parquet nativo.
+3. Consulta el estado hasta obtener `SUCCEEDED`:
 
-   **B) Verificación Lógica con SQL en Amazon Athena (Recomendado):**
-   - Ve a la consola de **AWS Glue** > Panel Izquierdo > **Databases**. Verifica que existe la base de datos `nexasecure_wids_catalog_dev_local` y que adentro contiene las tablas `raw_awid3` y `trusted_awid3`.
-   - Ve a la consola de **Amazon Athena**.
-   - En el editor de consultas (Query Editor), selecciona:
-     - Data source: `AwsDataCatalog`
-     - Database: `nexasecure_wids_catalog_dev_local`
-   - Ejecuta esta consulta para ver la data inmutable:
-     ```sql
-     SELECT * FROM raw_awid3 LIMIT 10;
-     ```
-   - Ejecuta esta consulta para comprobar la **seudonimización** de las MACs en la capa Trusted:
-     ```sql
-     SELECT "wlan.sa", "wlan.da", "wlan.bssid" FROM trusted_awid3 LIMIT 10;
-     ```
-     Verás que en lugar de direcciones MAC reales (ej. `00:11:22:33:44:55`), aparecerán hashes criptográficos (ej. `00:11:22:a1b2c3d4`).
+   ```bash
+   while true; do
+     STATE=$(aws glue get-job-run \
+       --job-name "$JOB_NAME" \
+       --run-id "$RUN_ID" \
+       --query 'JobRun.JobRunState' \
+       --output text)
+
+     echo "Estado: $STATE"
+
+     case "$STATE" in
+       SUCCEEDED)
+         break
+         ;;
+       FAILED|STOPPED|TIMEOUT|ERROR)
+         aws glue get-job-run \
+           --job-name "$JOB_NAME" \
+           --run-id "$RUN_ID" \
+           --query 'JobRun.ErrorMessage' \
+           --output text
+         exit 1
+         ;;
+       *)
+         sleep 15
+         ;;
+     esac
+   done
+   ```
+
+4. **Validación:** En Athena selecciona `SAFE_DATABASE` y ejecuta:
+
+   ```sql
+   SELECT COUNT(*) FROM raw_awid3;
+   SELECT COUNT(*) FROM trusted_awid3;
+   SELECT * FROM raw_awid3 LIMIT 10;
+   SELECT "wlan.sa", "wlan.da", "wlan.bssid"
+   FROM trusted_awid3
+   LIMIT 10;
+   ```
+
+### Fase 4: Probar el flujo Streaming (Kinesis -> Firehose -> S3)
+Desde dentro del contenedor de `ingestion-tools`, envía la porción de Streaming:
+```bash
+python -m src.kaggle_stream_simulator \
+  --kaggle-path "CSV/11.SSDP/SSDP_31.csv" \
+  --limit-per-cat 500 \
+  --rate 15
+
+# Varias categorías de ataque simultáneas (ej. 30 eventos por cada una):
+python -m src.kaggle_stream_simulator --categories "1.Deauth" "2.Disas" "10.SQL_Injection" --limit-per-cat 30 --rate 10
+
+# O todas las 13 categorías del dataset AWID3:
+python -m src.kaggle_stream_simulator --all-categories --limit-per-cat 20 --rate 10
+
+# O un solo archivo específico:
+python -m src.kaggle_stream_simulator --kaggle-path "CSV/1.Deauth/Deauth_0.csv" --limit 50 --rate 10
+```
+
+Para probar sin publicar en AWS:
+```bash
+python -m src.kaggle_stream_simulator \
+  --kaggle-path "CSV/11.SSDP/SSDP_31.csv" \
+  --limit-per-cat 20 \
+  --dry-run
+```
+
+Espera aproximadamente 60 segundos por el búfer de Firehose y verifica los
+archivos JSON en `raw/streaming/` del bucket Raw.
 
 ---
 

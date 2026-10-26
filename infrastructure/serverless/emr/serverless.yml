@@ -6,5 +6,22 @@ provider:
   stage: ${opt:stage, 'dev'}
   stackName: nexasecure-emr-${self:provider.stage}
 
+plugins:
+  - serverless-s3-sync
+
+custom:
+  developerName: ${env:GIT_USER_NAME, 'local'}
+  rawBucketName: nexasecure-wids-awid3-raw-${self:provider.stage}-${self:custom.developerName}
+  s3Sync:
+    hooks:
+      - before:deploy:deploy
+    buckets:
+      - bucketName: ${self:custom.rawBucketName}
+        bucketPrefix: bootstrap/
+        localDir: bootstrap
+      - bucketName: ${self:custom.rawBucketName}
+        bucketPrefix: flink-app/
+        localDir: ../../../flink-app
+
 resources:
   - ${file(emr-cluster.yml)}
