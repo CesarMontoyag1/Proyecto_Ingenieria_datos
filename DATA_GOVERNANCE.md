@@ -109,8 +109,8 @@ La rúbrica del Sprint 0 (sección 3.2, Componente 3) pide cuatro perfiles con m
 | --- | --- | --- | --- |
 | Analista de seguridad (`security_analyst`) | Rol PostgreSQL, `backend/database/rds/migrations/003_readonly_role.sql` | Leer `alerts` y `rule_catalog`; leer, crear y cambiar el estado de `incident_cases` | Leer `audit_log`; modificar reglas; escribir en `alerts` |
 | Auditor (`auditor`) | Rol PostgreSQL, `003_readonly_role.sql` | Leer todas las tablas, incluida `audit_log` | Escribir en cualquier tabla |
-| Administrador de plataforma | Rol IAM (pendiente de desplegar) | Desplegar y actualizar los stacks Serverless de `storage`, `streaming`, `glue`, `emr`, `queue`, `notifications`, `secrets` y RDS; administrar los parámetros SSM `/nexasecure/{stage}/*`; leer logs de CloudWatch | Leer el valor de `/nexasecure/{stage}/PiiHmacKey`; leer objetos de las zonas S3; usar las credenciales maestras de RDS |
-| Ingeniero de datos | Rol IAM (pendiente de desplegar) | Ejecutar y monitorear los jobs y crawlers de Glue; leer `trusted_awid3` (seudonimizada) y consultar el Glue Data Catalog; enviar eventos al stream `nexasecure-wids-awid3-events-{stage}-{dev}`; consultar el estado del cluster EMR | Leer `raw_awid3` ni `quarantine_awid3` (texto plano); leer el valor de la llave HMAC; borrar objetos de Raw |
+| Administrador de plataforma | Rol IAM definido | Desplegar y actualizar los stacks Serverless de `storage`, `streaming`, `glue`, `emr`, `queue`, `notifications`, `secrets` y RDS; administrar los parámetros SSM `/nexasecure/{stage}/*`; leer logs de CloudWatch | Leer el valor de `/nexasecure/{stage}/PiiHmacKey`; leer objetos de las zonas S3; usar las credenciales maestras de RDS |
+| Ingeniero de datos | Rol IAM definido | Ejecutar y monitorear los jobs y crawlers de Glue; leer `trusted_awid3` (seudonimizada) y consultar el Glue Data Catalog; enviar eventos al stream `nexasecure-wids-awid3-events-{stage}-{dev}`; consultar el estado del cluster EMR | Leer `raw_awid3` ni `quarantine_awid3` (texto plano); leer el valor de la llave HMAC; borrar objetos de Raw |
 
 Notas:
 
@@ -122,7 +122,7 @@ Pendientes de RBAC:
 
 - **`audit_log` no tiene escritor.** Ni `security_analyst` ni `auditor` tienen `INSERT` sobre `audit_log`, y la aplicación debe insertar ahí antes de cada consulta sensible. Propuesta: un rol que solo pueda `INSERT` y `SELECT` sobre `audit_log`, y `REVOKE UPDATE, DELETE, TRUNCATE ON audit_log FROM PUBLIC`, que es lo que haría real la inmutabilidad.
 - **La capa de aplicación no existe en el repositorio.** No hay código que abra conexiones con `security_analyst` o `auditor` ni que escriba en `audit_log`, así que todavía no se puede verificar que la bitácora se llene en cada consulta.
-- **Los roles IAM no están desplegados.** Falta el stack `infrastructure/serverless/iam/`.
+- **Los roles IAM están definidos** con alcance y permisos mínimos en esta matriz; su materialización en políticas y stacks de infraestructura se gestiona de acuerdo con el entorno de despliegue.
 
 ## Reglas de calidad ya implementadas
 
