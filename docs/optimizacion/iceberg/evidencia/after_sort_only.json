@@ -1,0 +1,188 @@
+{
+  "phase": "after",
+  "stage": "dev",
+  "database": "nexasecure_wids_catalog_dev_local",
+  "captured_at_utc": "2026-10-25T00:49:53.605110+00:00",
+  "selection": {
+    "date": "2020-12-18",
+    "label": "Normal",
+    "bssid": "0c:9d:92:ad2596f1"
+  },
+  "metadata": {
+    "metadata_location": "s3://nexasecure-wids-awid3-trusted-dev-local/trusted//metadata/00009-9588fb16-1f2c-42f4-a878-05b22290f735.metadata.json",
+    "snapshot_id": 3209415933680484965,
+    "total_records": "374983",
+    "partition_specs": [
+      {
+        "spec-id": 0,
+        "fields": []
+      },
+      {
+        "spec-id": 1,
+        "fields": [
+          {
+            "name": "event_date",
+            "transform": "identity",
+            "source-id": 255,
+            "field-id": 1000
+          }
+        ]
+      },
+      {
+        "spec-id": 2,
+        "fields": [
+          {
+            "name": "event_date",
+            "transform": "identity",
+            "source-id": 255,
+            "field-id": 1000
+          },
+          {
+            "name": "Label",
+            "transform": "identity",
+            "source-id": 254,
+            "field-id": 1001
+          }
+        ]
+      }
+    ],
+    "sort_orders": [
+      {
+        "order-id": 0,
+        "fields": []
+      },
+      {
+        "order-id": 1,
+        "fields": [
+          {
+            "transform": "identity",
+            "source-id": 23,
+            "direction": "asc",
+            "null-order": "nulls-last"
+          }
+        ]
+      }
+    ],
+    "properties": {
+      "owner": "spark",
+      "write.metadata.metrics.column.wlan.bssid": "full",
+      "write.distribution-mode": "range",
+      "write.parquet.bloom-filter-enabled.column.wlan.bssid": "true",
+      "nexasecure.layout.version": "1"
+    }
+  },
+  "queries": {
+    "date_label": [
+      {
+        "query_id": "760967b0-fc86-45c5-b9fb-b4f1c14cc9e8",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE event_date = DATE '2020-12-18' AND \"Label\" = 'Normal'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "149992",
+            "2.7995794E7"
+          ]
+        ],
+        "engine_ms": 1572,
+        "total_ms": 1802,
+        "bytes_scanned": 54304,
+        "reused": false
+      },
+      {
+        "query_id": "c53a69ad-2ce6-42a3-b4b6-109cd40a21e7",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE event_date = DATE '2020-12-18' AND \"Label\" = 'Normal'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "149992",
+            "2.7995794E7"
+          ]
+        ],
+        "engine_ms": 814,
+        "total_ms": 988,
+        "bytes_scanned": 54304,
+        "reused": false
+      },
+      {
+        "query_id": "3f976c09-5bf7-42ad-bd65-5d2faecfb171",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE event_date = DATE '2020-12-18' AND \"Label\" = 'Normal'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "149992",
+            "2.7995794E7"
+          ]
+        ],
+        "engine_ms": 2486,
+        "total_ms": 2851,
+        "bytes_scanned": 54304,
+        "reused": false
+      }
+    ],
+    "bssid": [
+      {
+        "query_id": "f660ff43-8108-4324-9f0b-ab94da01cd3a",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE \"wlan.bssid\" = '0c:9d:92:ad2596f1'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "102847",
+            "5.810921E7"
+          ]
+        ],
+        "engine_ms": 818,
+        "total_ms": 968,
+        "bytes_scanned": 102290,
+        "reused": false
+      },
+      {
+        "query_id": "06b68a2a-9f17-44a1-ac4e-afb46224f60f",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE \"wlan.bssid\" = '0c:9d:92:ad2596f1'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "102847",
+            "5.810921E7"
+          ]
+        ],
+        "engine_ms": 2012,
+        "total_ms": 2203,
+        "bytes_scanned": 102290,
+        "reused": false
+      },
+      {
+        "query_id": "32e0cf2a-785d-4a40-a7af-5ece2d4eb6cd",
+        "sql": "SELECT COUNT(*) AS records, SUM(TRY_CAST(\"frame.len\" AS double)) AS frame_bytes FROM \"nexasecure_wids_catalog_dev_local\".\"trusted_awid3\" WHERE \"wlan.bssid\" = '0c:9d:92:ad2596f1'",
+        "columns": [
+          "records",
+          "frame_bytes"
+        ],
+        "rows": [
+          [
+            "102847",
+            "5.810921E7"
+          ]
+        ],
+        "engine_ms": 805,
+        "total_ms": 974,
+        "bytes_scanned": 102290,
+        "reused": false
+      }
+    ]
+  }
+}

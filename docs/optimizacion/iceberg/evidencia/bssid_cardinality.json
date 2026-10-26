@@ -1,0 +1,16 @@
+{
+  "query_id": "53ab8704-7930-4cb9-9999-a310d32b822f",
+  "sql": "SELECT approx_distinct(\"wlan.bssid\") AS bssid_distinct FROM trusted_awid3",
+  "columns": [
+    "bssid_distinct"
+  ],
+  "rows": [
+    [
+      "120"
+    ]
+  ],
+  "engine_ms": 893,
+  "total_ms": 1070,
+  "bytes_scanned": 3359,
+  "reused": false
+}
