@@ -28,14 +28,26 @@ module.exports = () => {
   const repos = (process.env.GITHUB_REPOS ? process.env.GITHUB_REPOS.split(',') : DEFAULT_GITHUB_REPOS)
     .map((r) => r.trim())
     .filter(Boolean);
-  if (repos.length === 0) {
-    throw new Error('GITHUB_REPOS no puede estar vacío (formato owner/repo).');
+  if (repos.length === 0 || repos.some((r) => r.split('/').length !== 2)) {
+    throw new Error('GITHUB_REPOS debe tener el formato owner/repo, separados por coma.');
   }
   // Ramas desde las que el workflow puede desplegar (variable DEPLOY_BRANCHES, separadas por coma).
   const branches = (process.env.DEPLOY_BRANCHES ? process.env.DEPLOY_BRANCHES.split(',') : DEFAULT_DEPLOY_BRANCHES)
     .map((b) => b.trim())
     .filter(Boolean);
-  const subjects = repos.flatMap((repo) => branches.map((branch) => `repo:${repo}:ref:refs/heads/${branch}`));
+  // GitHub puede enviar el `sub` en dos formatos y se aceptan ambos:
+  //   clásico:  repo:Owner/Repo:ref:refs/heads/dev
+  //   con IDs:  repo:Owner@<owner_id>/Repo@<repo_id>:ref:refs/heads/dev
+  // El comodín solo reemplaza los IDs numéricos: el nombre del dueño queda fijo antes de la
+  // "@" (que no puede aparecer en nombres de usuario ni de repositorio), así que otra cuenta
+  // no puede hacerse pasar por este repositorio.
+  const subjects = repos.flatMap((repo) => {
+    const [owner, name] = repo.split('/');
+    return branches.flatMap((branch) => [
+      `repo:${owner}/${name}:ref:refs/heads/${branch}`,
+      `repo:${owner}@*/${name}@*:ref:refs/heads/${branch}`,
+    ]);
+  });
 
   const providerArn = `arn:aws:iam::${accountId}:oidc-provider/${OIDC_HOST}`;
   const rawBucketArn = `arn:aws:s3:::${custom.rawBucketName}`;
