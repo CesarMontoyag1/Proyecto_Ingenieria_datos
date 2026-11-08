@@ -1,0 +1,17 @@
+service: nexasecure-cicd
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-cicd-${self:provider.stage}
+custom:
+  developerName: ${env:GIT_USER_NAME, 'local'}
+  rawBucketName: nexasecure-wids-awid3-raw-${self:provider.stage}-${self:custom.developerName}
+  alertFormatterName: nexasecure-alerts-${self:provider.stage}-alertFormatter
+  roleName: nexasecure-github-actions-${self:provider.stage}
+  # Repositorios de GitHub que pueden asumir el rol (owner/repo, separados por coma).
+  githubRepos: ${env:GITHUB_REPOS, 'CesarMontoyag1/Proyecto_Ingenieria_datos,luisNP21/Proyecto_Ingenieria_datos'}
+  # Solo puede existir un proveedor OIDC de GitHub por cuenta. Si ya existe, usar 'false'.
+  createOidcProvider: ${env:CREATE_OIDC_PROVIDER, 'true'}
+resources:
+  - ${file(iam.js)}

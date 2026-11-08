@@ -6,6 +6,13 @@ El formato está basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1
 
 ## [Unreleased]
 ### Added
+- Stack `infrastructure/serverless/monitoring/`: tópico SNS de operación, alarmas de CloudWatch (DLQ, cola de alertas, Lambda, Kinesis, RDS y, opcionales, Firehose y métricas del detector), reglas de EventBridge para fallos de Glue y EMR, presupuesto mensual y dashboard `nexasecure-wids-{stage}`.
+- `flink-app/src/detection_job.py` publica en CloudWatch (namespace `NexaSecure/WIDS`) los eventos procesados, los eventos en cuarentena, las alertas por regla y la latencia de detección, con pruebas en `flink-app/tests/test_detection_metrics.py`.
+- Pipeline de CI/CD en `.github/workflows/ci-cd.yml`: pruebas de los cinco módulos en cada push y pull request; en `main`, despliegue del código de la Lambda de alertas (con prueba de humo), del detector en EMR y de los scripts de Glue.
+- Stack `infrastructure/serverless/cicd/`: rol IAM con OIDC para GitHub Actions, sin llaves guardadas en GitHub y con permisos limitados a esos despliegues.
+### Fixed
+- El clúster EMR (`emr-cluster.yml`) se mantiene activo sin pasos (`KeepJobFlowAliveWhenNoSteps: true`). Antes se apagaba al cancelar el paso del detector para relanzarlo; la autoterminación por inactividad de 30 minutos se conserva.
+- La latencia de detección se mide desde la llegada del evento a Kinesis (`ApproximateArrivalTimestamp`) hasta la publicación en SQS. Antes se reemplazaba el timestamp histórico de AWID3 por la hora actual y solo se medían microsegundos de procesamiento.
 - Stack `infrastructure/serverless/rds/`: PostgreSQL privado y cifrado, credenciales administradas, acceso de red limitado a EMR y referencias SSM.
 - Ejecutor temporal SSM sin puertos de entrada para aplicar las migraciones por la red privada; elimina sus recursos al terminar.
 - Scripts de despliegue y migraciones RDS con TLS, bloqueo, checksum y registro de migraciones aplicadas.
