@@ -187,6 +187,23 @@ Una vez creados estos archivos, la estructura local de tu proyecto estará lista
    cd serverless/alerts
    serverless deploy --stage dev
    ```
+9. Despliega el monitoreo (alarmas de CloudWatch, reglas de EventBridge, presupuesto
+   y dashboard). Detalle y pruebas en
+   [infrastructure/serverless/monitoring/README.md](infrastructure/serverless/monitoring/README.md):
+   ```bash
+   cd /app/infrastructure/serverless/monitoring
+   serverless deploy --stage dev
+   ```
+   Los avisos llegan al correo `ALERT_EMAIL` de `.envs/sls.env`, o a los definidos en
+   `OPS_ALERT_EMAILS` si se exporta. Cada destinatario debe confirmar la suscripción desde
+   el correo que envía AWS.
+10. Despliega una vez el rol que usa GitHub Actions para el CI/CD. El pipeline y su uso
+    están descritos en
+    [infrastructure/serverless/cicd/README.md](infrastructure/serverless/cicd/README.md):
+    ```bash
+    cd /app/infrastructure/serverless/cicd
+    serverless deploy --stage dev
+    ```
 
 ### Fase 2: Iniciar las Herramientas de Ingesta
 1. Abre la carpeta `ingestion-tools` en VS Code (reabre en su propio DevContainer) o levántalo manualmente:

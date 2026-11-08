@@ -1,0 +1,91 @@
+Resources:
+  # Fallos de los jobs de Glue de NexaSecure (ingesta batch, optimización y mantenimiento).
+  GlueJobFailedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ${self:custom.alarmPrefix}-glue-job-failed
+      Description: Avisa al equipo de operación cuando un job de Glue de NexaSecure falla.
+      State: ENABLED
+      EventPattern:
+        source: [aws.glue]
+        detail-type: [Glue Job State Change]
+        detail:
+          jobName: [{ prefix: nexasecure_ }]
+          state: [FAILED, TIMEOUT, ERROR, STOPPED]
+      Targets:
+        - Id: OpsTopic
+          Arn: !Ref OpsAlertsTopic
+          InputTransformer:
+            InputPathsMap:
+              job: $.detail.jobName
+              state: $.detail.state
+              run: $.detail.jobRunId
+              msg: $.detail.message
+            InputTemplate: '"[NexaSecure OPS] El job de Glue <job> terminó en estado <state> (run <run>). Mensaje: <msg>"'
+
+  GlueCrawlerFailedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ${self:custom.alarmPrefix}-glue-crawler-failed
+      Description: Avisa cuando un crawler de NexaSecure falla y el catálogo queda desactualizado.
+      State: ENABLED
+      EventPattern:
+        source: [aws.glue]
+        detail-type: [Glue Crawler State Change]
+        detail:
+          crawlerName: [{ prefix: nexasecure_ }]
+          state: [Failed]
+      Targets:
+        - Id: OpsTopic
+          Arn: !Ref OpsAlertsTopic
+          InputTransformer:
+            InputPathsMap:
+              crawler: $.detail.crawlerName
+              msg: $.detail.errorMessage
+            InputTemplate: '"[NexaSecure OPS] El crawler <crawler> falló. Mensaje: <msg>"'
+
+  # Fallo del paso que ejecuta el detector en streaming dentro de EMR.
+  EmrStepFailedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ${self:custom.alarmPrefix}-emr-step-failed
+      Description: Avisa cuando falla el paso del detector de intrusiones en EMR.
+      State: ENABLED
+      EventPattern:
+        source: [aws.emr]
+        detail-type: [EMR Step Status Change]
+        detail:
+          name: ["${self:custom.emrStepName}"]
+          state: [FAILED]
+      Targets:
+        - Id: OpsTopic
+          Arn: !Ref OpsAlertsTopic
+          InputTransformer:
+            InputPathsMap:
+              cluster: $.detail.clusterId
+              step: $.detail.name
+              msg: $.detail.message
+            InputTemplate: '"[NexaSecure OPS] El paso <step> del clúster EMR <cluster> falló. Mensaje: <msg>"'
+
+  # El clúster terminó con errores (no incluye la autoterminación por inactividad).
+  EmrClusterTerminatedWithErrorsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: ${self:custom.alarmPrefix}-emr-cluster-errors
+      Description: Avisa cuando el clúster EMR del detector termina con errores.
+      State: ENABLED
+      EventPattern:
+        source: [aws.emr]
+        detail-type: [EMR Cluster State Change]
+        detail:
+          name: [{ prefix: "${self:custom.emrClusterNamePrefix}" }]
+          state: [TERMINATED_WITH_ERRORS]
+      Targets:
+        - Id: OpsTopic
+          Arn: !Ref OpsAlertsTopic
+          InputTransformer:
+            InputPathsMap:
+              cluster: $.detail.clusterId
+              name: $.detail.name
+              msg: $.detail.message
+            InputTemplate: '"[NexaSecure OPS] El clúster EMR <name> (<cluster>) terminó con errores. Mensaje: <msg>"'

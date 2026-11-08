@@ -1,0 +1,266 @@
+Conditions:
+  HasFirehoseName: !Not [!Equals ["${self:custom.firehoseStreamName}", ""]]
+  DetectorAlarmsEnabled: !Equals ["${self:custom.enableDetectorAlarms}", "true"]
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # Cola de alertas y Lambda alertFormatter
+  # ---------------------------------------------------------------------------
+  AlertsDlqNotEmptyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-alerts-dlq-not-empty
+      AlarmDescription: >-
+        Hay alertas de seguridad en la DLQ: la Lambda alertFormatter falló 3 veces
+        con el mismo mensaje y el SOC no recibió esa notificación.
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: ${self:custom.alertsDlqName}
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]
+
+  AlertsQueueBacklogAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-alerts-queue-backlog
+      AlarmDescription: >-
+        El mensaje más antiguo de la cola de alertas lleva más de 5 minutos sin
+        procesarse: la Lambda no está consumiendo.
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: ${self:custom.alertsQueueName}
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]
+
+  AlertFormatterErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-alert-formatter-errors
+      AlarmDescription: La Lambda alertFormatter registró errores en los últimos 5 minutos.
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: ${self:custom.alertFormatterName}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]
+
+  AlertFormatterThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-alert-formatter-throttles
+      AlarmDescription: AWS limitó (throttling) invocaciones de la Lambda alertFormatter.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: ${self:custom.alertFormatterName}
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]
+
+  # ---------------------------------------------------------------------------
+  # Kinesis Data Stream
+  # ---------------------------------------------------------------------------
+  KinesisIteratorAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-kinesis-consumer-lag
+      AlarmDescription: >-
+        Un consumidor del stream (detector en EMR o Firehose) va más de 60 s atrasado
+        durante 5 minutos. Pone en riesgo el SLA de detección de 2 s.
+      Namespace: AWS/Kinesis
+      MetricName: GetRecords.IteratorAgeMilliseconds
+      Dimensions:
+        - Name: StreamName
+          Value: ${self:custom.streamName}
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 60000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]
+
+  KinesisWriteThrottledAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-kinesis-write-throttled
+      AlarmDescription: >-
+        Kinesis rechazó escrituras por exceder la capacidad del shard
+        (1 MB/s o 1.000 registros/s). Hace falta agregar shards.
+      Namespace: AWS/Kinesis
+      MetricName: WriteProvisionedThroughputExceeded
+      Dimensions:
+        - Name: StreamName
+          Value: ${self:custom.streamName}
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]
+
+  # ---------------------------------------------------------------------------
+  # Firehose (opcional: requiere FIREHOSE_STREAM_NAME, el nombre lo genera CloudFormation)
+  # ---------------------------------------------------------------------------
+  FirehoseDeliveryFailingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasFirehoseName
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-firehose-delivery-failing
+      AlarmDescription: Firehose no logró entregar a la zona Raw de S3 todos los registros recibidos.
+      Namespace: AWS/Firehose
+      MetricName: DeliveryToS3.Success
+      Dimensions:
+        - Name: DeliveryStreamName
+          Value: ${self:custom.firehoseStreamName}
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]
+
+  # ---------------------------------------------------------------------------
+  # RDS PostgreSQL
+  # ---------------------------------------------------------------------------
+  RdsCpuHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-rds-cpu-high
+      AlarmDescription: La CPU de RDS supera el 80 % durante 15 minutos.
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: ${self:custom.rdsInstanceId}
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]
+
+  RdsLowStorageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-rds-low-storage
+      AlarmDescription: Quedan menos de 2 GiB libres en RDS (20 GiB asignados).
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: ${self:custom.rdsInstanceId}
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2147483648
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]
+
+  # ---------------------------------------------------------------------------
+  # Métricas propias del detector (namespace NexaSecure/WIDS, dimensión Stage).
+  # Se activan con ENABLE_DETECTOR_ALARMS=true una vez que detection_job.py publique
+  # EventsProcessed y DetectionLatencyMs; antes de eso generarían falsas alarmas.
+  # ---------------------------------------------------------------------------
+  DetectionLatencySlaAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: DetectorAlarmsEnabled
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-detection-latency-sla
+      AlarmDescription: >-
+        El p95 de la latencia de detección (llegada a Kinesis hasta alerta en SQS)
+        supera el SLA de 2.000 ms en 2 de los últimos 3 minutos.
+      Namespace: NexaSecure/WIDS
+      MetricName: DetectionLatencyMs
+      Dimensions:
+        - Name: Stage
+          Value: ${self:provider.stage}
+      ExtendedStatistic: p95
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: 2000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]
+
+  DetectorStalledAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: DetectorAlarmsEnabled
+    Properties:
+      AlarmName: ${self:custom.alarmPrefix}-detector-stalled
+      AlarmDescription: >-
+        Entran eventos a Kinesis pero el detector no procesó ninguno en 10 minutos
+        (EMR apagado, paso fallido o consumidor bloqueado).
+      Metrics:
+        - Id: incoming
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/Kinesis
+              MetricName: IncomingRecords
+              Dimensions:
+                - Name: StreamName
+                  Value: ${self:custom.streamName}
+            Period: 300
+            Stat: Sum
+        - Id: processed
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: NexaSecure/WIDS
+              MetricName: EventsProcessed
+              Dimensions:
+                - Name: Stage
+                  Value: ${self:provider.stage}
+            Period: 300
+            Stat: Sum
+        - Id: stalled
+          Label: Eventos entrantes sin procesar
+          Expression: IF(incoming > 0 AND FILL(processed, 0) == 0, 1, 0)
+          ReturnData: true
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref OpsAlertsTopic]
+      OKActions: [!Ref OpsAlertsTopic]

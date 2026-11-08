@@ -1,0 +1,15 @@
+Resources:
+  OpsAlertsTopicArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/monitoring/OpsAlertsTopicArn
+      Type: String
+      Value: !Ref OpsAlertsTopic
+      Description: ARN del tópico SNS de alertas de operación de NexaSecure
+  DashboardNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/monitoring/DashboardName
+      Type: String
+      Value: !Ref OperationsDashboard
+      Description: Nombre del dashboard de CloudWatch de NexaSecure

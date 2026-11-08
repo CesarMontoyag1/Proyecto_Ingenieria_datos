@@ -1,0 +1,114 @@
+Resources:
+  OperationsDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: nexasecure-wids-${self:provider.stage}
+      DashboardBody: |
+        {
+          "start": "-PT3H",
+          "widgets": [
+            {
+              "type": "text", "x": 0, "y": 0, "width": 24, "height": 2,
+              "properties": {
+                "markdown": "## NexaSecure WIDS (${self:provider.stage}): salud del pipeline\nIngesta (Kinesis y Firehose) → detección (EMR) → alertas (SQS, Lambda y SNS) → base transaccional (RDS). Las alarmas notifican al tópico `nexasecure-ops-alerts-${self:provider.stage}`."
+              }
+            },
+            {
+              "type": "alarm", "x": 0, "y": 2, "width": 24, "height": 3,
+              "properties": {
+                "title": "Estado de las alarmas",
+                "alarms": [
+                  "arn:aws:cloudwatch:${aws:region}:${aws:accountId}:alarm:${self:custom.alarmPrefix}-alerts-dlq-not-empty",
+                  "arn:aws:cloudwatch:${aws:region}:${aws:accountId}:alarm:${self:custom.alarmPrefix}-alerts-queue-backlog",
+                  "arn:aws:cloudwatch:${aws:region}:${aws:accountId}:alarm:${self:custom.alarmPrefix}-alert-formatter-errors",
+                  "arn:aws:cloudwatch:${aws:region}:${aws:accountId}:alarm:${self:custom.alarmPrefix}-alert-formatter-throttles",
+                  "arn:aws:cloudwatch:${aws:region}:${aws:accountId}:alarm:${self:custom.alarmPrefix}-kinesis-consumer-lag",
+                  "arn:aws:cloudwatch:${aws:region}:${aws:accountId}:alarm:${self:custom.alarmPrefix}-kinesis-write-throttled",
+                  "arn:aws:cloudwatch:${aws:region}:${aws:accountId}:alarm:${self:custom.alarmPrefix}-rds-cpu-high",
+                  "arn:aws:cloudwatch:${aws:region}:${aws:accountId}:alarm:${self:custom.alarmPrefix}-rds-low-storage"
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 0, "y": 5, "width": 12, "height": 6,
+              "properties": {
+                "title": "Kinesis: eventos que entran y que se leen",
+                "region": "${aws:region}", "view": "timeSeries", "stat": "Sum", "period": 60,
+                "metrics": [
+                  ["AWS/Kinesis", "IncomingRecords", "StreamName", "${self:custom.streamName}", { "label": "Entrantes" }],
+                  ["AWS/Kinesis", "GetRecords.Records", "StreamName", "${self:custom.streamName}", { "label": "Leídos (EMR + Firehose)" }]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 5, "width": 12, "height": 6,
+              "properties": {
+                "title": "Kinesis: atraso del consumidor (ms)",
+                "region": "${aws:region}", "view": "timeSeries", "stat": "Maximum", "period": 60,
+                "metrics": [
+                  ["AWS/Kinesis", "GetRecords.IteratorAgeMilliseconds", "StreamName", "${self:custom.streamName}", { "label": "Iterator age" }]
+                ],
+                "annotations": { "horizontal": [{ "label": "Umbral de alarma", "value": 60000 }] }
+              }
+            },
+            {
+              "type": "metric", "x": 0, "y": 11, "width": 12, "height": 6,
+              "properties": {
+                "title": "Detector: eventos procesados, en cuarentena y alertas",
+                "region": "${aws:region}", "view": "timeSeries", "stat": "Sum", "period": 60,
+                "metrics": [
+                  ["NexaSecure/WIDS", "EventsProcessed", "Stage", "${self:provider.stage}", { "label": "Procesados" }],
+                  ["NexaSecure/WIDS", "EventsQuarantined", "Stage", "${self:provider.stage}", { "label": "En cuarentena" }],
+                  ["NexaSecure/WIDS", "AlertsGenerated", "Stage", "${self:provider.stage}", { "label": "Alertas" }]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 12, "y": 11, "width": 12, "height": 6,
+              "properties": {
+                "title": "Detector: latencia de detección (ms)",
+                "region": "${aws:region}", "view": "timeSeries", "period": 60,
+                "metrics": [
+                  ["NexaSecure/WIDS", "DetectionLatencyMs", "Stage", "${self:provider.stage}", { "stat": "p50", "label": "p50" }],
+                  ["NexaSecure/WIDS", "DetectionLatencyMs", "Stage", "${self:provider.stage}", { "stat": "p95", "label": "p95" }]
+                ],
+                "annotations": { "horizontal": [{ "label": "SLA 2 s", "value": 2000 }] }
+              }
+            },
+            {
+              "type": "metric", "x": 0, "y": 17, "width": 8, "height": 6,
+              "properties": {
+                "title": "SQS: cola de alertas y DLQ",
+                "region": "${aws:region}", "view": "timeSeries", "stat": "Maximum", "period": 60,
+                "metrics": [
+                  ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${self:custom.alertsQueueName}", { "label": "Cola de alertas" }],
+                  ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${self:custom.alertsDlqName}", { "label": "DLQ" }],
+                  ["AWS/SQS", "NumberOfMessagesSent", "QueueName", "${self:custom.alertsQueueName}", { "stat": "Sum", "label": "Alertas enviadas" }]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 8, "y": 17, "width": 8, "height": 6,
+              "properties": {
+                "title": "Lambda alertFormatter",
+                "region": "${aws:region}", "view": "timeSeries", "stat": "Sum", "period": 60,
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${self:custom.alertFormatterName}", { "label": "Invocaciones" }],
+                  ["AWS/Lambda", "Errors", "FunctionName", "${self:custom.alertFormatterName}", { "label": "Errores" }],
+                  ["AWS/Lambda", "Duration", "FunctionName", "${self:custom.alertFormatterName}", { "stat": "p95", "label": "Duración p95 (ms)", "yAxis": "right" }]
+                ]
+              }
+            },
+            {
+              "type": "metric", "x": 16, "y": 17, "width": 8, "height": 6,
+              "properties": {
+                "title": "RDS PostgreSQL",
+                "region": "${aws:region}", "view": "timeSeries", "stat": "Average", "period": 300,
+                "metrics": [
+                  ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${self:custom.rdsInstanceId}", { "label": "CPU %" }],
+                  ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "${self:custom.rdsInstanceId}", { "label": "Conexiones", "yAxis": "right" }]
+                ]
+              }
+            }
+          ]
+        }
