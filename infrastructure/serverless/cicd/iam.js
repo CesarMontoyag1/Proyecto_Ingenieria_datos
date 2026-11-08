@@ -4,9 +4,17 @@
 // de NexaSecure (Lambda de alertas, código del detector y scripts de Glue).
 const OIDC_HOST = 'token.actions.githubusercontent.com';
 
-// Serverless llama a esta función con { resolveVariable }. Los demás valores se dejan como
-// variables `${...}` dentro de los textos y Serverless los resuelve después.
-module.exports = async ({ resolveVariable }) => {
+// Repositorio original del equipo y fork de Luis. Se puede reemplazar con la variable de
+// entorno GITHUB_REPOS (owner/repo separados por coma). Se lee aquí y no en serverless.yml
+// porque Serverless v4 separa por comas los valores por defecto de ${env:...}.
+const DEFAULT_GITHUB_REPOS = [
+  'CesarMontoyag1/Proyecto_Ingenieria_datos',
+  'luisNP21/Proyecto_Ingenieria_datos',
+];
+
+// Los demás valores se dejan como variables `${...}` dentro de los textos y Serverless
+// los resuelve después.
+module.exports = () => {
   const accountId = '${aws:accountId}';
   const region = '${aws:region}';
   const stage = '${self:provider.stage}';
@@ -16,9 +24,7 @@ module.exports = async ({ resolveVariable }) => {
     alertFormatterName: '${self:custom.alertFormatterName}',
   };
 
-  // La lista de repositorios se necesita ya resuelta para construir una condición por repo.
-  const repos = String(await resolveVariable('self:custom.githubRepos'))
-    .split(',')
+  const repos = (process.env.GITHUB_REPOS ? process.env.GITHUB_REPOS.split(',') : DEFAULT_GITHUB_REPOS)
     .map((r) => r.trim())
     .filter(Boolean);
   if (repos.length === 0) {
@@ -123,10 +129,8 @@ module.exports = async ({ resolveVariable }) => {
               },
             },
           ],
-          Tags: [
-            { Key: 'Project', Value: 'NexaSecure' },
-            { Key: 'Stage', Value: stage },
-          ],
+          // Sin Tags propios: el despliegue ya etiqueta los recursos del stack, y repetir una
+          // clave (IAM no distingue mayúsculas, p. ej. Stage/STAGE) hace fallar la creación del rol.
         },
       },
       GitHubActionsRoleArnParameter: {
