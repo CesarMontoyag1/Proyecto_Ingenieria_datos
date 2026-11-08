@@ -244,7 +244,20 @@ Desde dentro del contenedor de `ingestion-tools`:
    python -m src.kaggle_batch_loader --kaggle-path "CSV/1.Deauth/Deauth_0.csv" --split-mode files
    ```
 
-2. Desde el contenedor de `infrastructure`, ejecuta el Glue Job:
+2. **No hace falta ejecutar nada más.** Cada archivo que llega a `landing/batch/` genera un
+   evento de S3 en EventBridge que inicia el workflow de Glue
+   `nexasecure_batch_workflow_dev_<GIT_USER_NAME>`. El workflow agrupa los archivos (hasta 20,
+   o 3 minutos después del primero), ejecuta el job de ingesta y, si termina bien, los crawlers.
+   Al terminar la ingesta, una Lambda recarga los datasets de tráfico de QuickSight. Además, la
+   ingesta corre todos los días a las 02:00 (Bogotá) como respaldo, y el mantenimiento de
+   Iceberg (compactación y expiración de snapshots) a las 03:00. Para seguir la ejecución:
+
+   ```bash
+   WF=$(aws ssm get-parameter --name /nexasecure/dev/glue/BatchIngestWorkflowName --query Parameter.Value --output text)
+   aws glue get-workflow --name "$WF" --include-graph --query "Workflow.LastRun.[Status,StartedOn,Statistics]"
+   ```
+
+   Ejecución manual (opcional), desde el contenedor de `infrastructure`:
 
    ```bash
    JOB_NAME=$(aws ssm get-parameter \

@@ -1,0 +1,112 @@
+# Orquestación automática de la ruta batch.
+#
+#   CSV nuevo en s3://<raw>/landing/batch/  ──(evento S3 "Object Created")──▶ EventBridge
+#        ▶ Glue Workflow: trigger EVENT (agrupa archivos) ▶ BatchIngestJob ▶ (SUCCEEDED) ▶ crawlers
+#
+# Además:
+#   - Red de seguridad diaria: corre la ingesta aunque no lleguen eventos. Con los job bookmarks
+#     solo procesa archivos pendientes (por ejemplo, de un lote descartado por concurrencia).
+#   - Mantenimiento diario de Iceberg (compactación y expiración de snapshots).
+# Las horas de los cron están en UTC (Bogotá = UTC-5).
+Resources:
+  BatchIngestWorkflow:
+    Type: AWS::Glue::Workflow
+    Properties:
+      Name: ${self:custom.batchWorkflowName}
+      Description: Ingesta batch automática al llegar archivos a landing/batch/
+      # Un solo run a la vez: el job usa bookmarks y no debe correr en paralelo.
+      MaxConcurrentRuns: 1
+
+  BatchIngestEventTrigger:
+    Type: AWS::Glue::Trigger
+    Properties:
+      Name: nexasecure_batch_arrival_trigger_${self:provider.stage}_${self:custom.developerName}
+      Description: Inicia la ingesta con hasta N archivos nuevos o al vencer la ventana
+      Type: EVENT
+      WorkflowName: !Ref BatchIngestWorkflow
+      EventBatchingCondition:
+        BatchSize: ${self:custom.batchEventSize}
+        BatchWindow: ${self:custom.batchWindowSeconds}
+      Actions:
+        - JobName: !Ref BatchIngestJob
+
+  WorkflowCrawlersTrigger:
+    Type: AWS::Glue::Trigger
+    Properties:
+      Name: nexasecure_workflow_crawlers_trigger_${self:provider.stage}_${self:custom.developerName}
+      Description: Actualiza el catálogo cuando la ingesta del workflow termina bien
+      Type: CONDITIONAL
+      StartOnCreation: true
+      WorkflowName: !Ref BatchIngestWorkflow
+      Predicate:
+        Conditions:
+          - LogicalOperator: EQUALS
+            JobName: !Ref BatchIngestJob
+            State: SUCCEEDED
+      Actions:
+        - CrawlerName: !Ref RawAwid3Crawler
+        - CrawlerName: !Ref TrustedAwid3Crawler
+
+  BatchIngestSafetyNetTrigger:
+    Type: AWS::Glue::Trigger
+    Properties:
+      Name: nexasecure_batch_daily_trigger_${self:provider.stage}_${self:custom.developerName}
+      Description: Ingesta diaria de respaldo (02:00 Bogotá) para archivos que no hayan disparado el workflow
+      Type: SCHEDULED
+      Schedule: cron(0 7 * * ? *)
+      StartOnCreation: true
+      Actions:
+        - JobName: !Ref BatchIngestJob
+
+  IcebergMaintenanceScheduleTrigger:
+    Type: AWS::Glue::Trigger
+    Properties:
+      Name: nexasecure_iceberg_maintenance_trigger_${self:provider.stage}_${self:custom.developerName}
+      Description: Compactación y expiración de snapshots de trusted_awid3 (03:00 Bogotá)
+      Type: SCHEDULED
+      Schedule: cron(0 8 * * ? *)
+      StartOnCreation: true
+      Actions:
+        - JobName: !Ref IcebergMaintenanceJob
+
+  # EventBridge necesita un rol para entregar eventos a un Glue Workflow.
+  LandingEventsToGlueRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: EventBridge entrega los eventos de landing/batch/ al workflow de Glue
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: NotifyBatchWorkflow
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: glue:notifyEvent
+                Resource: ${self:custom.batchWorkflowArn}
+
+  LandingBatchArrivalRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: nexasecure-${self:provider.stage}-landing-batch-arrival
+      Description: Archivo nuevo en landing/batch/ del bucket Raw -> workflow de ingesta batch
+      State: ENABLED
+      EventPattern:
+        source: [aws.s3]
+        detail-type: [Object Created]
+        detail:
+          bucket:
+            name: ["${self:custom.scriptsBucketName}"]
+          object:
+            key: [{ prefix: landing/batch/ }]
+      Targets:
+        - Id: BatchIngestWorkflow
+          Arn: ${self:custom.batchWorkflowArn}
+          RoleArn: !GetAtt LandingEventsToGlueRole.Arn
+    # El workflow debe existir antes de apuntar la regla a su ARN.
+    DependsOn: [BatchIngestWorkflow, BatchIngestEventTrigger]
