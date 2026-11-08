@@ -1,7 +1,10 @@
+import hashlib
 import json
 import logging
 import os
+import re
 import urllib.request
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import boto3
 
@@ -9,6 +12,8 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 REQUIRED_ALERT_FIELDS = ["rule_type", "severity", "bssid", "timestamp"]
+DEFAULT_SERVING_PREFIX = "serving/alerts"
+_SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
 def format_alert_message(alert: Dict[str, Any]) -> str:
@@ -80,8 +85,76 @@ def send_to_slack_if_configured(alert: Dict[str, Any], webhook_url: Optional[str
         logger.warning("No se pudo enviar alerta a Slack (webhook opcional): %s", e)
 
 
-def process_sqs_record(record: Dict[str, Any], sns_client, sns_topic_arn: str) -> None:
-    """Valida y procesa un registro individual de SQS hacia SNS."""
+def _optional_int(value: Any) -> Optional[int]:
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def build_serving_record(alert: Dict[str, Any], message_id: str) -> Dict[str, Any]:
+    """
+    Convierte una alerta en el registro plano de la zona Serving (tabla alerts_serving).
+
+    Solo contiene identificadores ya seudonimizados por el detector: nunca una MAC en
+    texto plano. El alert_id del detector (o, si falta, el messageId de SQS) hace que el
+    registro sea idempotente: un reintento sobrescribe el mismo objeto en S3.
+    """
+    detected = datetime.fromtimestamp(float(alert["timestamp"]), tz=timezone.utc)
+    alert_id = str(alert.get("alert_id") or "")
+    if not _SAFE_ID.match(alert_id):
+        alert_id = "sqs-" + hashlib.sha256(str(alert_id or message_id).encode("utf-8")).hexdigest()[:32]
+    return {
+        "alert_id": alert_id,
+        "rule_type": str(alert["rule_type"]),
+        "severity": str(alert["severity"]).upper(),
+        "bssid_pseudo": str(alert["bssid"]),
+        "src_mac_pseudo": None if alert.get("src_mac") in (None, "", "N/A") else str(alert["src_mac"]),
+        "observed_count": _optional_int(alert.get("observed_count")),
+        "threshold": _optional_int(alert.get("threshold")),
+        "window_seconds": _optional_float(alert.get("window_seconds")),
+        "detected_at": detected.isoformat(),
+        "detection_latency_ms": _optional_float(alert.get("detection_latency_ms")),
+        "published_at": alert.get("published_at"),
+        "details": json.dumps(alert.get("details", {}), ensure_ascii=False),
+        "dt": detected.strftime("%Y-%m-%d"),
+    }
+
+
+def serving_object_key(prefix: str, record: Dict[str, Any]) -> str:
+    """Ruta Hive-style particionada por fecha: <prefix>/dt=YYYY-MM-DD/<alert_id>.json"""
+    return f"{prefix.strip('/')}/dt={record['dt']}/{record['alert_id']}.json"
+
+
+def write_alert_to_serving(record: Dict[str, Any], s3_client, bucket: str, prefix: str) -> str:
+    """Escribe el registro en S3. La columna de partición dt va en la ruta, no en el JSON."""
+    body = {k: v for k, v in record.items() if k != "dt"}
+    key = serving_object_key(prefix, record)
+    s3_client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=(json.dumps(body, ensure_ascii=False) + "\n").encode("utf-8"),
+        ContentType="application/json",
+    )
+    return key
+
+
+def process_sqs_record(
+    record: Dict[str, Any],
+    sns_client,
+    sns_topic_arn: str,
+    s3_client=None,
+    serving_bucket: Optional[str] = None,
+    serving_prefix: str = DEFAULT_SERVING_PREFIX,
+) -> None:
+    """Valida un registro de SQS, lo guarda en la zona Serving (si está configurada) y lo publica en SNS."""
     body_str = record.get("body", "{}")
     alert_data = json.loads(body_str)
 
@@ -89,6 +162,13 @@ def process_sqs_record(record: Dict[str, Any], sns_client, sns_topic_arn: str) -
     for field in REQUIRED_ALERT_FIELDS:
         if field not in alert_data or alert_data[field] is None:
             raise ValueError(f"Falta el campo obligatorio en la alerta: '{field}'")
+
+    # Primero la persistencia: si falla, el mensaje vuelve a la cola sin haber enviado
+    # el correo, y el reintento sobrescribe el mismo objeto (no hay duplicados).
+    if serving_bucket and s3_client is not None:
+        serving_record = build_serving_record(alert_data, record.get("messageId", "unknown"))
+        key = write_alert_to_serving(serving_record, s3_client, serving_bucket, serving_prefix)
+        logger.info("Alerta persistida en la zona Serving: s3://%s/%s", serving_bucket, key)
 
     rule_type = alert_data.get("rule_type")
     severity = str(alert_data.get("severity")).upper()
@@ -114,16 +194,22 @@ def process_sqs_record(record: Dict[str, Any], sns_client, sns_topic_arn: str) -
     send_to_slack_if_configured(alert_data)
 
 
-def lambda_handler(event: Dict[str, Any], context: Any, sns_client=None) -> Dict[str, Any]:
+def lambda_handler(event: Dict[str, Any], context: Any, sns_client=None, s3_client=None) -> Dict[str, Any]:
     """
     Handler principal de la Lambda Alert Formatter con ReportBatchItemFailures.
-    Lee alertas desde la cola SQS de alertas y las publica en SNS.
+    Lee alertas desde la cola SQS de alertas, las guarda en la zona Serving de S3
+    (si SERVING_BUCKET está configurada) y las publica en SNS.
     """
     sns_topic_arn = os.environ.get("SNS_TOPIC_ARN")
     if not sns_topic_arn:
         raise ValueError("Variable de entorno 'SNS_TOPIC_ARN' no configurada.")
 
+    serving_bucket = os.environ.get("SERVING_BUCKET") or None
+    serving_prefix = os.environ.get("SERVING_PREFIX") or DEFAULT_SERVING_PREFIX
+
     client = sns_client or boto3.client("sns")
+    if serving_bucket and s3_client is None:
+        s3_client = boto3.client("s3")
     batch_item_failures: List[Dict[str, str]] = []
 
     records = event.get("Records", [])
@@ -132,10 +218,9 @@ def lambda_handler(event: Dict[str, Any], context: Any, sns_client=None) -> Dict
     for record in records:
         msg_id = record.get("messageId", "unknown")
         try:
-            process_sqs_record(record, client, sns_topic_arn)
+            process_sqs_record(record, client, sns_topic_arn, s3_client, serving_bucket, serving_prefix)
         except Exception as e:
             logger.error("Error al procesar mensaje SQS %s: %s", msg_id, e, exc_info=True)
             batch_item_failures.append({"itemIdentifier": msg_id})
 
     return {"batchItemFailures": batch_item_failures}
-

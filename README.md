@@ -197,7 +197,19 @@ Una vez creados estos archivos, la estructura local de tu proyecto estará lista
    Los avisos llegan al correo `ALERT_EMAIL` de `.envs/sls.env`, o a los definidos en
    `OPS_ALERT_EMAILS` si se exporta. Cada destinatario debe confirmar la suscripción desde
    el correo que envía AWS.
-10. Despliega una vez el rol que usa GitHub Actions para el CI/CD. El pipeline y su uso
+10. Despliega la capa de consumo (zona Serving de alertas, workgroup de Athena y vistas)
+    y crea el dashboard de QuickSight siguiendo
+    [infrastructure/serverless/consumption/README.md](infrastructure/serverless/consumption/README.md):
+    ```bash
+    cd /app/backend/serverless/alerts && serverless deploy --stage dev
+    cd /app/infrastructure/serverless/consumption && serverless deploy --stage dev
+    cd /app && python3 scripts/athena_views.py --stage dev --check
+    # Dashboard (requiere suscripción a QuickSight y QUICKSIGHT_USER_ARN en .envs/sls.env)
+    cd /app/infrastructure/serverless/quicksight && serverless deploy --stage dev
+    ```
+    Detalle del dashboard en
+    [infrastructure/serverless/quicksight/README.md](infrastructure/serverless/quicksight/README.md).
+11. Despliega una vez el rol que usa GitHub Actions para el CI/CD. El pipeline y su uso
     están descritos en
     [infrastructure/serverless/cicd/README.md](infrastructure/serverless/cicd/README.md):
     ```bash

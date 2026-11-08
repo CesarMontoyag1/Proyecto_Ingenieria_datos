@@ -1,0 +1,45 @@
+Resources:
+  # Alertas de la zona Serving, escritas por la Lambda alertFormatter (un JSON por alerta).
+  # La partición dt se resuelve con partition projection: Athena calcula las rutas
+  # s3://.../serving/alerts/dt=YYYY-MM-DD/ sin crawler ni MSCK REPAIR.
+  AlertsServingTable:
+    Type: AWS::Glue::Table
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseName: ${self:custom.catalogDatabase}
+      TableInput:
+        Name: alerts_serving
+        Description: Alertas de intrusión (zona Serving). Solo identificadores seudonimizados con HMAC-SHA256.
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: json
+          projection.enabled: "true"
+          projection.dt.type: date
+          projection.dt.format: yyyy-MM-dd
+          projection.dt.range: 2026-01-01,NOW
+          projection.dt.interval: "1"
+          projection.dt.interval.unit: DAYS
+        PartitionKeys:
+          - Name: dt
+            Type: string
+        StorageDescriptor:
+          Location: ${self:custom.servingAlertsLocation}
+          InputFormat: org.apache.hadoop.mapred.TextInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.openx.data.jsonserde.JsonSerDe
+            Parameters:
+              ignore.malformed.json: "true"
+          Columns:
+            - { Name: alert_id, Type: string, Comment: "Identificador único de la alerta" }
+            - { Name: rule_type, Type: string, Comment: "DEAUTH_FLOOD, ROGUE_AP, DISAS_BURST o SSDP_FLOOD" }
+            - { Name: severity, Type: string, Comment: "LOW, MEDIUM, HIGH o CRITICAL" }
+            - { Name: bssid_pseudo, Type: string, Comment: "BSSID seudonimizado (OUI + HMAC)" }
+            - { Name: src_mac_pseudo, Type: string, Comment: "MAC de origen seudonimizada" }
+            - { Name: observed_count, Type: int, Comment: "Tramas observadas en la ventana" }
+            - { Name: threshold, Type: int, Comment: "Umbral de la regla" }
+            - { Name: window_seconds, Type: double, Comment: "Ventana de la regla en segundos" }
+            - { Name: detected_at, Type: string, Comment: "Instante de detección, ISO 8601 en UTC" }
+            - { Name: detection_latency_ms, Type: double, Comment: "Llegada a Kinesis hasta publicación en SQS" }
+            - { Name: published_at, Type: string, Comment: "Instante de publicación en SQS, ISO 8601" }
+            - { Name: details, Type: string, Comment: "Detalles de la regla en JSON" }

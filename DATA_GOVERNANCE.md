@@ -72,7 +72,8 @@ Credenciales también forman parte del catálogo porque definen quién puede lee
 3. Ruta streaming: Kinesis Firehose persiste el evento crudo en `raw/streaming/` sin transformar. `flink-app/src/detection_job.py` consume el stream, valida, seudonimiza (mismo algoritmo HMAC-SHA256, misma llave en Secrets Manager que el job batch) y escribe en `trusted_awid3`, evaluando en paralelo las reglas de `detection_rules.py`.
 4. Si una regla dispara, `detection_job.py` inserta una fila en `alerts` (RDS) y publica a la cola SQS de alertas; `backend/serverless/alerts/handler.py` la formatea y notifica (SNS/Slack) mediante la Lambda `alertFormatter`.
 5. El analista SOC abre un `incident_cases` a partir de una alerta, y cada consulta que hace sobre `alerts`/`incident_cases` con el rol `security_analyst` queda escrita en `audit_log`.
-6. Las consultas analíticas (Athena/Redshift, Sprint Final) leen exclusivamente de `trusted_awid3`, nunca de Raw ni Quarantine.
+6. La Lambda `alertFormatter` también guarda cada alerta (ya seudonimizada) en la zona Serving, `s3://<trusted>/serving/alerts/`, catalogada como `alerts_serving`.
+7. La capa de consumo (vistas `vw_*` en Athena y el dashboard de QuickSight) lee exclusivamente `trusted_awid3` y `alerts_serving`, nunca Raw ni Quarantine. QuickSight solo tiene acceso al bucket Trusted. `vw_top_bssid` suprime los BSSID con menos de 5 tramas (k ≥ 5). Detalle en `infrastructure/serverless/consumption/README.md`.
 
 El punto exacto donde se aplica la seudonimización (paso 2 y 3) es la evidencia auditable de que ningún dato aguas abajo de Trusted expone una MAC real.
 

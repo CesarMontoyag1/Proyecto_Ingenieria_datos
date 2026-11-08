@@ -8,9 +8,16 @@ provider:
   stackName: nexasecure-alerts-${self:provider.stage}
   environment:
     SNS_TOPIC_ARN: ${ssm:/nexasecure/${self:provider.stage}/notifications/SocAlertsTopicArn}
+    # Zona Serving: cada alerta se guarda como JSON en s3://<trusted>/serving/alerts/dt=YYYY-MM-DD/
+    SERVING_BUCKET: ${ssm:/nexasecure/${self:provider.stage}/storage/TrustedAwid3BucketName}
+    SERVING_PREFIX: serving/alerts
   iam:
     role:
       statements:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+          Resource: ${ssm:/nexasecure/${self:provider.stage}/storage/TrustedAwid3BucketArn}/serving/alerts/*
         - Effect: Allow
           Action:
             - sns:Publish

@@ -1,0 +1,15 @@
+service: nexasecure-quicksight
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-quicksight-${self:provider.stage}
+custom:
+  catalogDatabase: ${ssm:/nexasecure/${self:provider.stage}/glue/GlueCatalogDatabaseName}
+  athenaWorkGroup: ${ssm:/nexasecure/${self:provider.stage}/consumption/AthenaWorkGroup}
+  trustedBucket: ${ssm:/nexasecure/${self:provider.stage}/storage/TrustedAwid3BucketName}
+  refreshTimeZone: America/Bogota
+  # El ARN del usuario de QuickSight (dueño del dashboard) se lee en quicksight.js desde
+  # la variable de entorno QUICKSIGHT_USER_ARN o desde .envs/sls.env.
+resources:
+  - ${file(quicksight.js)}
