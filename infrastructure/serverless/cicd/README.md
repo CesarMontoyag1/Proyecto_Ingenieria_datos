@@ -8,9 +8,12 @@ así que en GitHub no se guarda ninguna llave ni hay que configurar *secrets*.
 
 | Evento | Trabajos |
 |---|---|
-| Push a cualquier rama o pull request hacia `main` | **CI**: pruebas de `flink-app`, `backend`, `ingestion-tools`, `scripts` y `glue-jobs`, y verificación de que el handler probado es el que se despliega |
-| Push a `main` (por ejemplo, al hacer merge de un PR) | **CI + CD**: si las pruebas pasan, despliega solo lo que cambió |
-| Ejecución manual (Actions → CI/CD → Run workflow, rama `main`) | **CI + CD** de todos los componentes |
+| Push a cualquier rama o pull request hacia `main` o `dev` | **CI**: pruebas de `flink-app`, `backend`, `ingestion-tools`, `scripts` y `glue-jobs`, y verificación de que el handler probado es el que se despliega |
+| Push a `dev` o `main` (por ejemplo, al hacer merge de un PR) | **CI + CD**: si las pruebas pasan, despliega solo lo que cambió |
+| Ejecución manual (Actions → CI/CD → Run workflow, rama `dev` o `main`) | **CI + CD** de todos los componentes |
+
+Las dos ramas despliegan en el mismo ambiente de AWS (stage `dev`), que es el único que
+existe en el proyecto.
 
 Despliegue (CD):
 
@@ -34,8 +37,8 @@ existe en GitHub.
 - Escribir en los prefijos `flink-app/` y `glue-jobs/` del bucket Raw.
 - Consultar, cancelar y agregar pasos en clústeres EMR.
 
-Solo lo puede asumir un workflow que corra en la rama `main` de los repositorios de
-`GITHUB_REPOS`. No tiene acceso a otros recursos de la cuenta.
+Solo lo puede asumir un workflow que corra en las ramas `main` o `dev` (`DEPLOY_BRANCHES`)
+de los repositorios de `GITHUB_REPOS`. No tiene acceso a otros recursos de la cuenta.
 
 ## Despliegue del stack (una sola vez)
 
@@ -56,6 +59,7 @@ Variables opcionales:
 | Variable | Por defecto | Uso |
 |---|---|---|
 | `GITHUB_REPOS` | `CesarMontoyag1/Proyecto_Ingenieria_datos,luisNP21/Proyecto_Ingenieria_datos` | Repositorios (owner/repo) que pueden desplegar |
+| `DEPLOY_BRANCHES` | `main,dev` | Ramas desde las que se puede desplegar |
 | `CREATE_OIDC_PROVIDER` | `true` | `false` si la cuenta ya tiene el proveedor OIDC de GitHub |
 | `GIT_USER_NAME` | `local` | Sufijo del bucket Raw |
 

@@ -1,7 +1,7 @@
 # CI/CD de NexaSecure WIDS
 #
 # CI (todas las ramas y pull requests): pruebas unitarias de cada módulo.
-# CD (solo push a main o ejecución manual): despliega en AWS el código que cambió.
+# CD (push o ejecución manual en main o dev): despliega en AWS el código que cambió.
 #   - Lambda alertFormatter: sube el handler probado y ejecuta una prueba de humo.
 #   - Detector (flink-app): sube el código a S3 y reinicia el paso de EMR si el clúster está activo.
 #   - Jobs de Glue: sube los scripts a S3; Glue los usa en la siguiente ejecución.
@@ -13,7 +13,7 @@ name: CI/CD
 on:
   push:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
     inputs:
       deploy_all:
@@ -31,7 +31,7 @@ env:
 jobs:
   tests:
     name: Pruebas (${{ matrix.module }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # versión fija: ubuntu-latest migra a Ubuntu 26 desde octubre de 2026
     strategy:
       fail-fast: false
       matrix:
@@ -107,7 +107,7 @@ jobs:
 
   handler-consistency:
     name: Handler probado = handler desplegado
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Comparar las dos copias del handler de alertas
@@ -124,8 +124,9 @@ jobs:
   deploy:
     name: Despliegue en AWS (dev)
     needs: [tests, handler-consistency]
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
+    # Despliega desde main o dev. Ambas ramas apuntan al mismo ambiente de AWS (stage dev).
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
     concurrency:
       group: deploy-dev
       cancel-in-progress: false

@@ -1,6 +1,6 @@
 // Rol que asume GitHub Actions mediante OIDC: el workflow obtiene credenciales temporales
-// de AWS sin guardar llaves en GitHub. Solo el workflow que corre en la rama main de los
-// repositorios listados puede asumirlo, y sus permisos se limitan a desplegar el código
+// de AWS sin guardar llaves en GitHub. Solo el workflow que corre en las ramas de despliegue
+// (main y dev) de los repositorios listados puede asumirlo, y sus permisos se limitan a desplegar el código
 // de NexaSecure (Lambda de alertas, código del detector y scripts de Glue).
 const OIDC_HOST = 'token.actions.githubusercontent.com';
 
@@ -11,6 +11,7 @@ const DEFAULT_GITHUB_REPOS = [
   'CesarMontoyag1/Proyecto_Ingenieria_datos',
   'luisNP21/Proyecto_Ingenieria_datos',
 ];
+const DEFAULT_DEPLOY_BRANCHES = ['main', 'dev'];
 
 // Los demás valores se dejan como variables `${...}` dentro de los textos y Serverless
 // los resuelve después.
@@ -30,7 +31,11 @@ module.exports = () => {
   if (repos.length === 0) {
     throw new Error('GITHUB_REPOS no puede estar vacío (formato owner/repo).');
   }
-  const subjects = repos.map((repo) => `repo:${repo}:ref:refs/heads/main`);
+  // Ramas desde las que el workflow puede desplegar (variable DEPLOY_BRANCHES, separadas por coma).
+  const branches = (process.env.DEPLOY_BRANCHES ? process.env.DEPLOY_BRANCHES.split(',') : DEFAULT_DEPLOY_BRANCHES)
+    .map((b) => b.trim())
+    .filter(Boolean);
+  const subjects = repos.flatMap((repo) => branches.map((branch) => `repo:${repo}:ref:refs/heads/${branch}`));
 
   const providerArn = `arn:aws:iam::${accountId}:oidc-provider/${OIDC_HOST}`;
   const rawBucketArn = `arn:aws:s3:::${custom.rawBucketName}`;
