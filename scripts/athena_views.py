@@ -7,7 +7,7 @@ Usage (from the repo root, with .envs/aws.env):
 """
 import argparse
 import re
-import time
+mport time
 
 from aws_common import ROOT, aws_session, parameter
 from iceberg_benchmark import run_query
