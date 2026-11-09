@@ -1,0 +1,28 @@
+
+Installed:
+  libxcrypt-compat-4.4.33-7.amzn2023.x86_64                                     
+  python3-pip-21.3.1-2.amzn2023.0.22.noarch                                     
+
+--- PASO 1: Verificando migraciones en RDS ---
+Already applied: 001_schema.sql
+Already applied: 002_indexes.sql
+Already applied: 003_readonly_role.sql
+Tables: alerts, audit_log, incident_cases, rule_catalog, schema_migrations
+Validated: 4 rules, 4 optimization indexes and PostgreSQL role privileges.
+--- PASO 2: Sembrando datos en tabla alerts (50.000 filas) ---
+Filas actuales en alerts: 0
+Sembrando 50.000 alertas sinteticas...
+Siembra completada. Total filas en alerts: 50000
+--- PASO 3: Ejecutando backend/database/rds/demo_indexes.py ---
+
+=== alerts: rule_type=DEAUTH_FLOOD AND severity=HIGH ===
+  ANTES (sin índices -- Seq Scan)
+    Tipo de nodo:        Limit
+    Filas devueltas:     0
+    Tiempo de ejecución: 7.09 ms
+  DESPUÉS (con índices -- Index Scan)
+    Tipo de nodo:        Limit
+    Filas devueltas:     0
+    Tiempo de ejecución: 0.10 ms
+  >>> 68.8x más rápido (Limit -> Limit) <<<
+

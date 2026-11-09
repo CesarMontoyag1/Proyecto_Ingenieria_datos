@@ -1,0 +1,55 @@
+service: nexasecure-quicksight
+provider:
+  name: aws
+  runtime: python3.11
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-quicksight-${self:provider.stage}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - quicksight:CreateIngestion
+            - quicksight:DescribeIngestion
+          Resource:
+            - arn:aws:quicksight:${self:provider.region}:${aws:accountId}:dataset/nexasecure-traffic-${self:provider.stage}
+            - arn:aws:quicksight:${self:provider.region}:${aws:accountId}:dataset/nexasecure-traffic-${self:provider.stage}/*
+            - arn:aws:quicksight:${self:provider.region}:${aws:accountId}:dataset/nexasecure-topbssid-${self:provider.stage}
+            - arn:aws:quicksight:${self:provider.region}:${aws:accountId}:dataset/nexasecure-topbssid-${self:provider.stage}/*
+custom:
+  catalogDatabase: ${ssm:/nexasecure/${self:provider.stage}/glue/GlueCatalogDatabaseName}
+  athenaWorkGroup: ${ssm:/nexasecure/${self:provider.stage}/consumption/AthenaWorkGroup}
+  trustedBucket: ${ssm:/nexasecure/${self:provider.stage}/storage/TrustedAwid3BucketName}
+  batchIngestJobName: ${ssm:/nexasecure/${self:provider.stage}/glue/BatchIngestJobName}
+  refreshTimeZone: America/Bogota
+  # El ARN del usuario de QuickSight (dueño del dashboard) se lee en quicksight.js desde
+  # la variable de entorno QUICKSIGHT_USER_ARN o desde .envs/sls.env.
+package:
+  individually: true
+functions:
+  spiceRefresh:
+    handler: spice_refresh.lambda_handler
+    description: Recarga los datasets SPICE de tráfico cuando la ingesta batch de Glue termina bien
+    timeout: 30
+    package:
+      patterns:
+        - '!**'
+        - 'spice_refresh.py'
+    environment:
+      QUICKSIGHT_ACCOUNT_ID: ${aws:accountId}
+      DATASET_IDS: nexasecure-traffic-${self:provider.stage},nexasecure-topbssid-${self:provider.stage}
+    events:
+      - eventBridge:
+          pattern:
+            source:
+              - aws.glue
+            detail-type:
+              - Glue Job State Change
+            detail:
+              jobName:
+                - ${self:custom.batchIngestJobName}
+              state:
+                - SUCCEEDED
+resources:
+  - ${file(quicksight.js)}

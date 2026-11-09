@@ -202,7 +202,8 @@ def main():
 
     print(f"\n==================================================================")
     print(f"Carga Batch finalizada: {successful} de {len(targets)} archivos procesados exitosamente.")
-    print("Siguiente paso: Ejecutar el Glue job 'BatchIngestJob' para procesar los datos a Iceberg.")
+    print("Los archivos nuevos en landing/batch/ inician solos el workflow de ingesta de Glue "
+          "(unos 3 minutos después del primero). Los archivos omitidos no lo disparan.")
     print(f"==================================================================")
 
 

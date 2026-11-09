@@ -1,0 +1,15 @@
+Resources:
+  ConsumptionWorkGroupParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/consumption/AthenaWorkGroup
+      Type: String
+      Value: !Ref ConsumptionWorkGroup
+      Description: Workgroup de Athena de la capa de consumo
+  AlertsServingTableParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/consumption/AlertsServingTable
+      Type: String
+      Value: !Ref AlertsServingTable
+      Description: Tabla Glue de alertas de la zona Serving

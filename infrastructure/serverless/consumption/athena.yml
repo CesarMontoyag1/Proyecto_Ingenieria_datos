@@ -1,0 +1,21 @@
+Resources:
+  # Workgroup dedicado a la capa de consumo (QuickSight y consultas del analista).
+  # Fija la ubicación de resultados, publica métricas en CloudWatch y corta cualquier
+  # consulta que intente escanear más de 1 GiB (control de costo).
+  ConsumptionWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: ${self:custom.workGroupName}
+      Description: Capa de consumo de NexaSecure WIDS (vistas Serving y QuickSight)
+      State: ENABLED
+      RecursiveDeleteOption: true
+      WorkGroupConfiguration:
+        EnforceWorkGroupConfiguration: true
+        PublishCloudWatchMetricsEnabled: true
+        BytesScannedCutoffPerQuery: 1073741824
+        EngineVersion:
+          SelectedEngineVersion: Athena engine version 3
+        ResultConfiguration:
+          OutputLocation: ${self:custom.athenaResultsLocation}
+          EncryptionConfiguration:
+            EncryptionOption: SSE_S3

@@ -12,6 +12,11 @@ plugins:
 custom:
   developerName: ${env:GIT_USER_NAME, 'local'}
   scriptsBucketName: nexasecure-wids-awid3-raw-${self:provider.stage}-${self:custom.developerName}
+  # Workflow por eventos: arranca con 20 archivos nuevos o 3 minutos después del primero.
+  batchWorkflowName: nexasecure_batch_workflow_${self:provider.stage}_${self:custom.developerName}
+  batchWorkflowArn: arn:aws:glue:${self:provider.region}:${aws:accountId}:workflow/${self:custom.batchWorkflowName}
+  batchEventSize: ${env:GLUE_BATCH_EVENT_SIZE, '20'}
+  batchWindowSeconds: ${env:GLUE_BATCH_WINDOW_SECONDS, '180'}
   s3Sync:
     - bucketName: ${self:custom.scriptsBucketName}
       bucketPrefix: glue-jobs/
@@ -24,5 +29,6 @@ resources:
   - ${file(glue-crawlers.yml)}
   - ${file(glue-jobs.yml)}
   - ${file(glue-triggers.yml)}
+  - ${file(glue-workflow.yml)}
   - ${file(parameters.yml)}
 
