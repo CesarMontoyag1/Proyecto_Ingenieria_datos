@@ -59,6 +59,14 @@ class TestServingRecord(unittest.TestCase):
         self.assertIsNone(record["observed_count"])
         self.assertIsNone(record["src_mac_pseudo"])
 
+    def test_historical_awid3_timestamp_uses_published_at_for_partition(self):
+        record = build_serving_record(
+            dict(ALERT, timestamp=1608308000.0, published_at="2026-11-08T18:20:00+00:00"),
+            "msg-0",
+        )
+        self.assertEqual(record["dt"], "2026-11-08")
+        self.assertEqual(record["detected_at"], "2026-11-08T18:20:00+00:00")
+
 
 class TestLambdaWritesServing(unittest.TestCase):
     def test_writes_partitioned_object_then_publishes(self):

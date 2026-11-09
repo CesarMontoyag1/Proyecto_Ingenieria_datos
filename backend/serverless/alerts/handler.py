@@ -108,6 +108,15 @@ def build_serving_record(alert: Dict[str, Any], message_id: str) -> Dict[str, An
     registro sea idempotente: un reintento sobrescribe el mismo objeto en S3.
     """
     detected = datetime.fromtimestamp(float(alert["timestamp"]), tz=timezone.utc)
+    if detected.year < 2026:
+        published_at = alert.get("published_at")
+        if published_at:
+            try:
+                detected = datetime.fromisoformat(str(published_at).replace("Z", "+00:00"))
+            except ValueError:
+                detected = datetime.now(timezone.utc)
+        else:
+            detected = datetime.now(timezone.utc)
     alert_id = str(alert.get("alert_id") or "")
     if not _SAFE_ID.match(alert_id):
         alert_id = "sqs-" + hashlib.sha256(str(alert_id or message_id).encode("utf-8")).hexdigest()[:32]
