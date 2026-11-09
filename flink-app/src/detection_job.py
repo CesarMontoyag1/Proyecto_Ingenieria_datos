@@ -1,13 +1,17 @@
 """
-Pipeline de Detección de Intrusiones en Streaming con Apache Flink / PyFlink.
-NexaSecure WIDS - Sprint 2
+Detector de intrusiones en streaming (consumidor Kinesis en Python sobre Amazon EMR).
+NexaSecure WIDS
 
 Flujo por evento:
-1. Validar esquema (802.11 calibrated quality rules).
+1. Validar esquema (reglas de calidad calibradas por tipo de trama 802.11).
 2. Si es inválido: escribir en S3 Quarantine (con rejection_reason y processed_at).
-3. Si es válido: seudonimizar MAC/BSSID con HMAC-SHA256 y escribir en Trusted Iceberg.
-4. Evaluar reglas de detección en tiempo real (Deauth Flood, Rogue AP, Disas Burst).
-5. Si dispara regla: publicar alerta en cola SQS de alertas (SLA < 2s).
+3. Si es válido: seudonimizar MAC/BSSID con HMAC-SHA256 y escribir micro-lotes NDJSON en S3 Trusted.
+4. Evaluar reglas de detección en tiempo real (Deauth Flood, Rogue AP, Disas Burst, SSDP Flood).
+5. Si dispara regla: publicar alerta en la cola SQS de alertas (SLA < 2 s).
+
+La latencia de detección se mide desde que el evento llega a Kinesis
+(ApproximateArrivalTimestamp) hasta que la alerta se publica en SQS. Los conteos y la
+latencia se publican en CloudWatch (namespace NexaSecure/WIDS, dimensión Stage).
 """
 
 import json
@@ -25,6 +29,111 @@ from src.schema_validation import validate_record
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("NexaSecureDetectionJob")
+
+METRICS_NAMESPACE_DEFAULT = "NexaSecure/WIDS"
+# CloudWatch admite hasta 150 valores distintos por dato y, de forma conservadora,
+# se envían como máximo 20 datos por llamada a PutMetricData.
+_MAX_VALUES_PER_DATUM = 150
+_MAX_DATUMS_PER_CALL = 20
+
+
+class MetricsCollector:
+    """
+    Acumula conteos y latencias del detector y los publica en CloudWatch por lotes.
+
+    Se publica una vez por intervalo (por defecto 60 s) para mantener bajo el número de
+    llamadas a PutMetricData. Los conteos se envían aunque sean 0: así un detector activo
+    sin tráfico se distingue de un detector caído. Un fallo al publicar se registra en el
+    log y no detiene el procesamiento del stream.
+    """
+
+    def __init__(self, stage: str, namespace: str = METRICS_NAMESPACE_DEFAULT, enabled: bool = True):
+        self.stage = stage
+        self.namespace = namespace
+        self.enabled = enabled
+        self._reset()
+
+    def _reset(self) -> None:
+        self.events_processed = 0
+        self.events_quarantined = 0
+        self.alerts_by_rule: Dict[str, int] = {}
+        self.latencies_ms: List[float] = []
+
+    def record_event(self) -> None:
+        self.events_processed += 1
+
+    def record_quarantined(self) -> None:
+        self.events_quarantined += 1
+
+    def record_alert(self, rule_type: str, latency_ms: Optional[float]) -> None:
+        self.alerts_by_rule[rule_type] = self.alerts_by_rule.get(rule_type, 0) + 1
+        if latency_ms is not None:
+            self.latencies_ms.append(round(float(latency_ms), 2))
+
+    def build_metric_data(self, timestamp: Optional[datetime] = None) -> List[Dict[str, Any]]:
+        """Construye la lista de datos para PutMetricData con los valores acumulados."""
+        ts = timestamp or datetime.now(timezone.utc)
+        stage_dim = [{"Name": "Stage", "Value": self.stage}]
+
+        def count(name: str, value: int, dims: List[Dict[str, str]]) -> Dict[str, Any]:
+            return {"MetricName": name, "Dimensions": dims, "Timestamp": ts,
+                    "Value": float(value), "Unit": "Count"}
+
+        data = [
+            count("EventsProcessed", self.events_processed, stage_dim),
+            count("EventsQuarantined", self.events_quarantined, stage_dim),
+            count("AlertsGenerated", sum(self.alerts_by_rule.values()), stage_dim),
+        ]
+        for rule_type, total in sorted(self.alerts_by_rule.items()):
+            data.append(count("AlertsGenerated", total,
+                              stage_dim + [{"Name": "RuleType", "Value": rule_type}]))
+
+        # Se envían los valores crudos (no un resumen) para que CloudWatch calcule p50/p95.
+        for start in range(0, len(self.latencies_ms), _MAX_VALUES_PER_DATUM):
+            chunk = self.latencies_ms[start:start + _MAX_VALUES_PER_DATUM]
+            data.append({"MetricName": "DetectionLatencyMs", "Dimensions": stage_dim,
+                         "Timestamp": ts, "Values": chunk, "Counts": [1.0] * len(chunk),
+                         "Unit": "Milliseconds"})
+        return data
+
+    def flush(self, cloudwatch_client) -> bool:
+        """Publica lo acumulado y reinicia los contadores. Devuelve True si se publicó."""
+        if not self.enabled or cloudwatch_client is None:
+            self._reset()
+            return False
+        data = self.build_metric_data()
+        try:
+            for start in range(0, len(data), _MAX_DATUMS_PER_CALL):
+                cloudwatch_client.put_metric_data(
+                    Namespace=self.namespace,
+                    MetricData=data[start:start + _MAX_DATUMS_PER_CALL],
+                )
+            logger.info(
+                "Métricas publicadas en CloudWatch: procesados=%d, cuarentena=%d, alertas=%d, latencias=%d",
+                self.events_processed, self.events_quarantined,
+                sum(self.alerts_by_rule.values()), len(self.latencies_ms),
+            )
+            return True
+        except Exception as e:
+            logger.warning("No se pudieron publicar las métricas en CloudWatch: %s", e)
+            return False
+        finally:
+            self._reset()
+
+
+def kinesis_arrival_epoch(kinesis_record: Dict[str, Any]) -> Optional[float]:
+    """Devuelve el ApproximateArrivalTimestamp de un registro de Kinesis en segundos epoch."""
+    arrival = kinesis_record.get("ApproximateArrivalTimestamp")
+    if arrival is None:
+        return None
+    if isinstance(arrival, datetime):
+        if arrival.tzinfo is None:
+            arrival = arrival.replace(tzinfo=timezone.utc)
+        return arrival.timestamp()
+    try:
+        return float(arrival)
+    except (TypeError, ValueError):
+        return None
 
 
 def get_hmac_key_from_secrets(secret_name: str, region_name: str = "us-east-1") -> bytes:
@@ -100,8 +209,13 @@ def publish_alert_to_sqs(
     queue_url: str,
     alert: Dict[str, Any],
     ingest_time: float
-) -> None:
-    """Publica una alerta en la cola SQS y mide la latencia de detección (SLA < 2s)."""
+) -> float:
+    """
+    Publica una alerta en la cola SQS y devuelve la latencia de detección en ms.
+
+    ingest_time es el instante (epoch) en que el evento llegó a Kinesis; la latencia
+    medida corresponde al SLA del proyecto: de la ingesta a la alerta, menor a 2 s.
+    """
     current_time = time.time()
     latency_sec = current_time - ingest_time
     latency_ms = latency_sec * 1000.0
@@ -122,6 +236,7 @@ def publish_alert_to_sqs(
             "severity": {"DataType": "String", "StringValue": alert["severity"]}
         }
     )
+    return latency_ms
 
 
 def insert_alert_to_rds(db_conn, alert: Dict[str, Any]) -> bool:
@@ -214,7 +329,9 @@ def process_event_record(
     alerts_queue_url: Optional[str] = None,
     s3_client=None,
     sqs_client=None,
-    db_conn=None
+    db_conn=None,
+    ingest_time: Optional[float] = None,
+    metrics: Optional[MetricsCollector] = None
 ) -> Tuple[bool, Optional[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Función pura/desacoplada que procesa un evento individual:
@@ -222,23 +339,23 @@ def process_event_record(
     2. Si inválido -> registra motivo de rechazo
     3. Si válido -> seudonimiza MACs y evalúa reglas de detección
     Retorna: (is_valid, record_transformado, lista_alertas)
-    """
-    now_utc = datetime.now(timezone.utc).isoformat()
-    raw_event_epoch = record.get("frame.time_epoch")
-    try:
-        raw_time = float(raw_event_epoch) if raw_event_epoch is not None else time.time()
-    except (ValueError, TypeError):
-        raw_time = time.time()
 
-    # En streaming con datasets históricos (como AWID3 del 2020), si el timestamp
-    # tiene más de 1 día de antigüedad se usa wall-clock actual para que la ventana
-    # y la medición de latencia SLA (< 2s) reflejen la transmisión en vivo.
-    now = time.time()
-    event_time = now if abs(now - raw_time) > 86400 else raw_time
+    ingest_time: instante epoch en que el evento llegó a Kinesis
+    (ApproximateArrivalTimestamp). Si no se conoce (pruebas locales), se usa el instante
+    en que empieza el procesamiento y la latencia medida es solo la del detector.
+    El timestamp del dataset (AWID3 es de 2020) no sirve para medir la latencia.
+    """
+    if ingest_time is None:
+        ingest_time = time.time()
+    now_utc = datetime.now(timezone.utc).isoformat()
+    if metrics:
+        metrics.record_event()
 
     # 1. Validación de Calidad
     validation = validate_record(record)
     if not validation.is_valid:
+        if metrics:
+            metrics.record_quarantined()
         if s3_client and quarantine_bucket:
             try:
                 write_to_quarantine_s3(s3_client, quarantine_bucket, record, validation.rejection_reason or "unknown", now_utc)
@@ -255,11 +372,14 @@ def process_event_record(
     # 3. Evaluación de Reglas de Detección
     alerts = detection_engine.process_event(record)
     for alert in alerts:
+        latency_ms = None
         if sqs_client and alerts_queue_url:
             try:
-                publish_alert_to_sqs(sqs_client, alerts_queue_url, alert, event_time)
+                latency_ms = publish_alert_to_sqs(sqs_client, alerts_queue_url, alert, ingest_time)
             except Exception as e:
                 logger.error("Error al publicar alerta en SQS: %s", e)
+        if metrics:
+            metrics.record_alert(alert.get("rule_type", "UNKNOWN"), latency_ms)
         if db_conn:
             try:
                 insert_alert_to_rds(db_conn, alert)
@@ -279,7 +399,9 @@ def run_kinesis_consumer(
     region_name: str = "us-east-1",
     poll_interval: float = 1.0,
     iterator_type: str = "LATEST",
-    db_conn=None
+    db_conn=None,
+    metrics: Optional[MetricsCollector] = None,
+    metrics_flush_seconds: float = 60.0
 ):
     """
     Bucle consumidor en tiempo real desde Kinesis Data Streams.
@@ -288,6 +410,8 @@ def run_kinesis_consumer(
     kinesis_client = boto3.client("kinesis", region_name=region_name)
     s3_client = boto3.client("s3", region_name=region_name)
     sqs_client = boto3.client("sqs", region_name=region_name)
+    cloudwatch_client = boto3.client("cloudwatch", region_name=region_name) if metrics else None
+    last_metrics_flush = time.time()
 
     logger.info("Obteniendo shards del stream Kinesis: %s", stream_name)
     desc = kinesis_client.describe_stream(StreamName=stream_name)
@@ -336,7 +460,9 @@ def run_kinesis_consumer(
                                 alerts_queue_url=alerts_queue_url,
                                 s3_client=s3_client,
                                 sqs_client=sqs_client,
-                                db_conn=db_conn
+                                db_conn=db_conn,
+                                ingest_time=kinesis_arrival_epoch(r),
+                                metrics=metrics
                             )
                             if is_val and trusted_rec and trusted_bucket:
                                 trusted_buffer.append(trusted_rec)
@@ -349,12 +475,19 @@ def run_kinesis_consumer(
                 trusted_buffer.clear()
                 last_flush_time = time.time()
 
+            # Publicar métricas del intervalo en CloudWatch (también si fueron 0)
+            if metrics and (time.time() - last_metrics_flush) >= metrics_flush_seconds:
+                metrics.flush(cloudwatch_client)
+                last_metrics_flush = time.time()
+
             # Pequeña pausa para no saturar la API de Kinesis si no hay registros
             if not had_records:
                 time.sleep(poll_interval)
     except KeyboardInterrupt:
         if trusted_bucket and trusted_buffer:
             write_trusted_batch_to_s3(s3_client, trusted_bucket, trusted_buffer)
+        if metrics:
+            metrics.flush(cloudwatch_client)
         logger.info("Consumidor detenido por el usuario. Total eventos procesados: %d", total_processed)
 
 
@@ -414,6 +547,15 @@ def main():
         engine.load_rules_from_rds(db_conn)
 
     iterator_type = os.environ.get("ITERATOR_TYPE", "LATEST")
+    metrics = MetricsCollector(
+        stage=stage,
+        namespace=os.environ.get("METRICS_NAMESPACE", METRICS_NAMESPACE_DEFAULT),
+        enabled=os.environ.get("METRICS_ENABLED", "true").lower() != "false",
+    )
+    metrics_flush_seconds = float(os.environ.get("METRICS_FLUSH_SECONDS", "60"))
+    logger.info("Métricas CloudWatch: %s (namespace %s, cada %.0f s)",
+                "activadas" if metrics.enabled else "desactivadas", metrics.namespace, metrics_flush_seconds)
+
     run_kinesis_consumer(
         stream_name=stream_name,
         detection_engine=engine,
@@ -423,7 +565,9 @@ def main():
         trusted_bucket=trusted_bucket,
         region_name=region_name,
         iterator_type=iterator_type,
-        db_conn=db_conn
+        db_conn=db_conn,
+        metrics=metrics,
+        metrics_flush_seconds=metrics_flush_seconds
     )
 
 

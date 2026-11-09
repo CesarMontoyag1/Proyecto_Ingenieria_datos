@@ -13,6 +13,14 @@ Resources:
       Value: !Ref NexaSecureWidsCatalog
       Description: Nombre de la base de datos de AWS Glue Data Catalog
 
+  BatchIngestWorkflowNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /nexasecure/${self:provider.stage}/glue/BatchIngestWorkflowName
+      Type: String
+      Value: !Ref BatchIngestWorkflow
+      Description: Workflow de Glue que se inicia al llegar archivos a landing/batch/
+
   BatchIngestJobNameParameter:
     Type: AWS::SSM::Parameter
     Properties:

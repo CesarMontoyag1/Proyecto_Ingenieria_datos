@@ -1,0 +1,28 @@
+service: nexasecure-monitoring
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-monitoring-${self:provider.stage}
+custom:
+  developerName: ${env:GIT_USER_NAME, 'local'}
+  # Nombres de los recursos vigilados. Deben coincidir con los stacks existentes.
+  streamName: nexasecure-wids-awid3-events-${self:provider.stage}-${self:custom.developerName}
+  alertsQueueName: nexasecure-alerts-${self:provider.stage}
+  alertsDlqName: nexasecure-alerts-dlq-${self:provider.stage}
+  alertFormatterName: nexasecure-alerts-${self:provider.stage}-alertFormatter
+  rdsInstanceId: nexasecure-postgres-${self:provider.stage}
+  emrClusterNamePrefix: nexasecure-flink-cluster-
+  emrStepName: NexaSecureDetectionJob
+  # Opcionales: se activan con variables de entorno al desplegar.
+  firehoseStreamName: ${env:FIREHOSE_STREAM_NAME, ''}
+  enableDetectorAlarms: ${env:ENABLE_DETECTOR_ALARMS, 'false'}
+  monthlyBudgetUsd: ${env:MONTHLY_BUDGET_USD, '50'}
+  alarmPrefix: nexasecure-${self:provider.stage}
+resources:
+  - ${file(sns.js)}
+  - ${file(alarms.yml)}
+  - ${file(events.yml)}
+  - ${file(budget.yml)}
+  - ${file(dashboard.yml)}
+  - ${file(parameters.yml)}

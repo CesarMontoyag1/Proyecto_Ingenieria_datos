@@ -17,6 +17,10 @@ Resources:
           InstanceType: ${env:EMR_INSTANCE_TYPE, 'm5.xlarge'}
           Name: CoreNode
         TerminationProtected: false
+        # Sin esto (por defecto false) el clúster se apaga en cuanto no queda ningún paso
+        # en ejecución, por ejemplo al cancelar el detector para relanzarlo con código nuevo.
+        # La AutoTerminationPolicy sigue apagándolo tras 30 min sin pasos activos.
+        KeepJobFlowAliveWhenNoSteps: true
       AutoTerminationPolicy:
         IdleTimeout: 1800 # 30 minutos de inactividad antes de auto-terminar para proteger créditos
       # Roles estándar de Amazon EMR (con fallback configurable para Learner Lab vía env)

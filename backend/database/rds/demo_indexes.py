@@ -47,7 +47,11 @@ def _drop_optimization_indexes(cursor):
 
 def _explain(cursor, query, params):
     cursor.execute(f'EXPLAIN (ANALYZE, FORMAT JSON) {query}', params)
-    plan = cursor.fetchone()[0][0]
+    raw = cursor.fetchone()[0]
+    if isinstance(raw, str):
+        import json
+        raw = json.loads(raw)
+    plan = raw[0]
     return {
         'node_type': plan['Plan']['Node Type'],
         'rows_examined': plan['Plan'].get('Actual Rows', 0),
@@ -77,10 +81,12 @@ def main():
         print('\n=== alerts: rule_type=DEAUTH_FLOOD AND severity=HIGH ===')
 
         _drop_optimization_indexes(cursor)
+        cursor.execute('ANALYZE alerts;')
         before = _explain(cursor, QUERY, QUERY_PARAMS)
         _print_stats('ANTES (sin índices -- Seq Scan)', before)
 
         _run_sql_file(cursor, '002_indexes.sql')
+        cursor.execute('ANALYZE alerts;')
         after = _explain(cursor, QUERY, QUERY_PARAMS)
         _print_stats('DESPUÉS (con índices -- Index Scan)', after)
 

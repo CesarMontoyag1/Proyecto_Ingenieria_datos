@@ -1,0 +1,16 @@
+service: nexasecure-consumption
+provider:
+  name: aws
+  region: ${opt:region, 'us-east-1'}
+  stage: ${opt:stage, 'dev'}
+  stackName: nexasecure-consumption-${self:provider.stage}
+custom:
+  catalogDatabase: ${ssm:/nexasecure/${self:provider.stage}/glue/GlueCatalogDatabaseName}
+  trustedBucket: ${ssm:/nexasecure/${self:provider.stage}/storage/TrustedAwid3BucketName}
+  servingAlertsLocation: s3://${self:custom.trustedBucket}/serving/alerts/
+  athenaResultsLocation: s3://${self:custom.trustedBucket}/athena-results/consumption/
+  workGroupName: nexasecure-consumption-${self:provider.stage}
+resources:
+  - ${file(glue-tables.yml)}
+  - ${file(athena.yml)}
+  - ${file(parameters.yml)}

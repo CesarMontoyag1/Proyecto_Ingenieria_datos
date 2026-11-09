@@ -1,0 +1,266 @@
+# CI/CD de NexaSecure WIDS
+#
+# CI (todas las ramas y pull requests): pruebas unitarias de cada módulo.
+# CD (push o ejecución manual en main o dev): despliega en AWS el código que cambió.
+#   - Lambda alertFormatter: sube el handler probado y ejecuta una prueba de humo.
+#   - Detector (flink-app): sube el código a S3 y reinicia el paso de EMR si el clúster está activo.
+#   - Jobs de Glue: sube los scripts a S3; Glue los usa en la siguiente ejecución.
+#
+# La autenticación con AWS usa OIDC (rol creado por infrastructure/serverless/cicd).
+# No se guarda ninguna llave de AWS en GitHub.
+name: CI/CD
+
+on:
+  push:
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+    inputs:
+      deploy_all:
+        description: "Desplegar todos los componentes aunque no hayan cambiado"
+        type: boolean
+        default: true
+
+env:
+  AWS_REGION: us-east-1
+  STAGE: dev
+  AWS_ROLE_ARN: arn:aws:iam::609789571098:role/nexasecure-github-actions-dev
+  ALERT_FUNCTION: nexasecure-alerts-dev-alertFormatter
+  DETECTOR_STEP_NAME: NexaSecureDetectionJob
+
+jobs:
+  tests:
+    name: Pruebas (${{ matrix.module }})
+    runs-on: ubuntu-24.04   # versión fija: ubuntu-latest migra a Ubuntu 26 desde octubre de 2026
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - module: flink-app
+            python: "3.11"
+            deps: boto3 pytest
+          - module: backend
+            python: "3.11"
+            deps: boto3 pytest
+          - module: ingestion-tools
+            python: "3.11"
+            deps: -r requirements.txt pytest
+          - module: scripts
+            python: "3.11"
+            deps: boto3 pytest
+          - module: glue-jobs
+            python: "3.10"          # Glue 4.0 usa Python 3.10 y Spark 3.3
+            deps: pyspark==3.3.4 boto3 pytest
+            java: "11"
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - if: matrix.java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - name: Instalar dependencias
+        run: python -m pip install ${{ matrix.deps }}
+
+      - name: Ejecutar pruebas
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -m pytest tests -q -p no:cacheprovider --junitxml=junit-${{ matrix.module }}.xml
+
+      - name: Resumen de resultados
+        if: always()
+        run: |
+          python - <<'EOF'
+          import os, xml.etree.ElementTree as ET
+          module = "${{ matrix.module }}"
+          path = f"junit-{module}.xml"
+          if not os.path.exists(path):
+              line = f"| {module} | sin reporte | | | |"
+          else:
+              root = ET.parse(path).getroot()
+              suite = root if root.tag == "testsuite" else root.find("testsuite")
+              tests, failures = int(suite.get("tests", 0)), int(suite.get("failures", 0))
+              errors, skipped = int(suite.get("errors", 0)), int(suite.get("skipped", 0))
+              status = "✅" if failures == errors == 0 else "❌"
+              line = f"| {module} | {status} | {tests} | {failures + errors} | {skipped} |"
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("| Módulo | Estado | Pruebas | Fallidas | Omitidas |\n|---|---|---|---|---|\n")
+              summary.write(line + "\n")
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-${{ matrix.module }}
+          path: ${{ matrix.module }}/junit-${{ matrix.module }}.xml
+          if-no-files-found: ignore
+
+  handler-consistency:
+    name: Handler probado = handler desplegado
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Comparar las dos copias del handler de alertas
+        run: |
+          # Las pruebas usan backend/src/alert_formatter/handler.py y `serverless deploy`
+          # empaqueta backend/serverless/alerts/handler.py. Deben ser idénticas.
+          if ! cmp -s backend/src/alert_formatter/handler.py backend/serverless/alerts/handler.py; then
+            echo "::error::Las copias del handler de alertas son distintas. Copia backend/src/alert_formatter/handler.py en backend/serverless/alerts/handler.py."
+            diff -u backend/src/alert_formatter/handler.py backend/serverless/alerts/handler.py || true
+            exit 1
+          fi
+          echo "Las dos copias del handler son idénticas."
+
+  deploy:
+    name: Despliegue en AWS (dev)
+    needs: [tests, handler-consistency]
+    # Despliega desde main o dev. Ambas ramas apuntan al mismo ambiente de AWS (stage dev).
+    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    permissions:
+      id-token: write   # necesario para OIDC
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detectar componentes modificados
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            lambda:
+              - 'backend/src/alert_formatter/**'
+              - 'backend/serverless/alerts/handler.py'
+            detector:
+              - 'flink-app/src/**'
+            glue:
+              - 'glue-jobs/src/**'
+
+      - name: Decidir qué desplegar
+        id: plan
+        run: |
+          ALL="${{ github.event_name == 'workflow_dispatch' && inputs.deploy_all }}"
+          echo "lambda=$([ "$ALL" = "true" ] || [ "${{ steps.changes.outputs.lambda }}" = "true" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "detector=$([ "$ALL" = "true" ] || [ "${{ steps.changes.outputs.detector }}" = "true" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "glue=$([ "$ALL" = "true" ] || [ "${{ steps.changes.outputs.glue }}" = "true" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Credenciales de AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: nexasecure-cicd-${{ github.run_id }}
+
+      - name: Resolver nombres desde SSM
+        run: |
+          RAW_BUCKET=$(aws ssm get-parameter --name "/nexasecure/${STAGE}/storage/RawAwid3BucketName" --query Parameter.Value --output text)
+          echo "RAW_BUCKET=${RAW_BUCKET}" >> "$GITHUB_ENV"
+          echo "Bucket de código: ${RAW_BUCKET}"
+
+      # --------------------------------------------------------------------------
+      # Lambda alertFormatter
+      # --------------------------------------------------------------------------
+      - name: Desplegar Lambda alertFormatter
+        if: steps.plan.outputs.lambda == 'true'
+        run: |
+          mkdir -p build/lambda
+          cp backend/src/alert_formatter/handler.py build/lambda/handler.py
+          (cd build/lambda && zip -q ../alertFormatter.zip handler.py)
+          aws lambda update-function-code --function-name "$ALERT_FUNCTION" \
+            --zip-file fileb://build/alertFormatter.zip --query "[FunctionName,LastUpdateStatus,CodeSha256]" --output text
+          aws lambda wait function-updated --function-name "$ALERT_FUNCTION"
+          echo "- Lambda \`$ALERT_FUNCTION\` actualizada" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Prueba de humo de la Lambda
+        if: steps.plan.outputs.lambda == 'true'
+        run: |
+          # Un mensaje que no es JSON debe volver como batchItemFailures (no publica en SNS).
+          cat > build/smoke-event.json <<'EOF'
+          {"Records": [{"messageId": "cicd-smoke-test", "body": "no-es-json",
+                        "eventSource": "aws:sqs", "awsRegion": "us-east-1"}]}
+          EOF
+          aws lambda invoke --function-name "$ALERT_FUNCTION" \
+            --cli-binary-format raw-in-base64-out --payload fileb://build/smoke-event.json \
+            build/smoke-response.json --query "FunctionError" --output text > build/function-error.txt
+          echo "Respuesta: $(cat build/smoke-response.json)"
+          if [ "$(cat build/function-error.txt)" != "None" ]; then
+            echo "::error::La Lambda devolvió un error: $(cat build/function-error.txt)"; exit 1
+          fi
+          python3 - <<'EOF'
+          import json, sys
+          body = json.load(open("build/smoke-response.json"))
+          failures = [f.get("itemIdentifier") for f in body.get("batchItemFailures", [])]
+          if failures != ["cicd-smoke-test"]:
+              sys.exit(f"Respuesta inesperada de la Lambda: {body}")
+          print("Prueba de humo correcta: la Lambda cargó el código y rechazó el mensaje inválido.")
+          EOF
+          echo "- Prueba de humo de la Lambda: ✅" >> "$GITHUB_STEP_SUMMARY"
+
+      # --------------------------------------------------------------------------
+      # Detector en streaming (EMR)
+      # --------------------------------------------------------------------------
+      - name: Subir código del detector a S3
+        if: steps.plan.outputs.detector == 'true'
+        run: |
+          aws s3 sync flink-app "s3://${RAW_BUCKET}/flink-app/" \
+            --exclude "*__pycache__*" --exclude ".docker/*" --exclude ".devcontainer.json" --no-progress
+          echo "- Código del detector subido a \`s3://${RAW_BUCKET}/flink-app/\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Reiniciar el detector en EMR
+        if: steps.plan.outputs.detector == 'true'
+        run: |
+          CLUSTER_ID=$(aws ssm get-parameter --name "/nexasecure/${STAGE}/emr/ClusterId" --query Parameter.Value --output text 2>/dev/null || echo "")
+          STATE=$( [ -n "$CLUSTER_ID" ] && aws emr describe-cluster --cluster-id "$CLUSTER_ID" --query Cluster.Status.State --output text 2>/dev/null || echo "NONE")
+          echo "Clúster: ${CLUSTER_ID:-ninguno} (${STATE})"
+          if [ "$STATE" != "RUNNING" ] && [ "$STATE" != "WAITING" ]; then
+            echo "El clúster no está activo; el código nuevo se usará cuando se vuelva a crear."
+            echo "- Detector: clúster EMR no activo (${STATE}); se usará el código nuevo al recrearlo" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          RUNNING_STEP=$(aws emr list-steps --cluster-id "$CLUSTER_ID" --step-states RUNNING PENDING \
+            --query "Steps[?Name=='${DETECTOR_STEP_NAME}'].Id | [0]" --output text)
+          if [ "$RUNNING_STEP" != "None" ] && [ -n "$RUNNING_STEP" ]; then
+            echo "Cancelando el paso ${RUNNING_STEP} para cargar el código nuevo"
+            aws emr cancel-steps --cluster-id "$CLUSTER_ID" --step-ids "$RUNNING_STEP" \
+              --step-cancellation-option SEND_INTERRUPT --output text
+            for i in $(seq 1 24); do
+              S=$(aws emr list-steps --cluster-id "$CLUSTER_ID" --step-ids "$RUNNING_STEP" --query "Steps[0].Status.State" --output text)
+              echo "Estado del paso anterior: $S"
+              case "$S" in CANCELLED|COMPLETED|FAILED|INTERRUPTED) break ;; esac
+              sleep 5
+            done
+          fi
+
+          CMD="export AWS_DEFAULT_REGION=${AWS_REGION} AWS_REGION=${AWS_REGION} STAGE=${STAGE} PYTHONPATH=/home/hadoop/flink-app && rm -rf /home/hadoop/flink-app && aws s3 cp s3://${RAW_BUCKET}/flink-app/ /home/hadoop/flink-app/ --recursive && cd /home/hadoop/flink-app && python3 -u -m src.detection_job"
+          jq -n --arg name "$DETECTOR_STEP_NAME" --arg cmd "$CMD" \
+            '[{Name: $name, ActionOnFailure: "CONTINUE", Jar: "command-runner.jar", Args: ["bash", "-c", $cmd]}]' > build-step.json
+          NEW_STEP=$(aws emr add-steps --cluster-id "$CLUSTER_ID" --steps file://build-step.json --query "StepIds[0]" --output text)
+          echo "Paso nuevo del detector: ${NEW_STEP}"
+          echo "- Detector reiniciado en EMR \`${CLUSTER_ID}\` (paso \`${NEW_STEP}\`)" >> "$GITHUB_STEP_SUMMARY"
+
+      # --------------------------------------------------------------------------
+      # Jobs de Glue
+      # --------------------------------------------------------------------------
+      - name: Subir scripts de Glue a S3
+        if: steps.plan.outputs.glue == 'true'
+        run: |
+          aws s3 sync glue-jobs/src "s3://${RAW_BUCKET}/glue-jobs/" --exclude "*__pycache__*" --no-progress
+          echo "- Scripts de Glue subidos a \`s3://${RAW_BUCKET}/glue-jobs/\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sin cambios desplegables
+        if: steps.plan.outputs.lambda != 'true' && steps.plan.outputs.detector != 'true' && steps.plan.outputs.glue != 'true'
+        run: echo "- No hubo cambios en la Lambda, el detector ni los jobs de Glue" >> "$GITHUB_STEP_SUMMARY"

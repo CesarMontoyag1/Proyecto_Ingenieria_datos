@@ -3,6 +3,11 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: ${self:custom.rawBucketName}
+      # Publica en EventBridge los eventos del bucket ("Object Created" en landing/batch/ inicia
+      # el workflow de ingesta batch de Glue). No reemplaza el bucket ni toca sus datos.
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
       VersioningConfiguration:
         Status: Enabled
       BucketEncryption:
